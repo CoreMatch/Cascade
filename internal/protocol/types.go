@@ -17,6 +17,8 @@ const (
 	TypeRelayPromptReply   = 118
 	TypeRelayVersionInfo   = 163
 	TypeRelayBecomeServer  = 170
+	TypeRelayPow           = 151
+	TypeRelayPowReceive    = 152
 	TypeGameCommand        = 116
 )
 

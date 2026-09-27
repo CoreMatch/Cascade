@@ -39,7 +39,7 @@ func (m *SessionManager) GetSession(id string) (*Session, bool) {
 }
 
 // RemoveSession stops and removes a session from the manager.
-func (m. *SessionManager) RemoveSession(id string) {
+func (m *SessionManager) RemoveSession(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

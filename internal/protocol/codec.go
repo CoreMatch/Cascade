@@ -165,6 +165,13 @@ func (w *Writer) MaybeString(value string) error {
 	return w.String(value)
 }
 
+func (w *Writer) MaybeInt32(value int32, exists bool) {
+	w.Bool(exists)
+	if exists {
+		w.Int32(value)
+	}
+}
+
 func (w *Writer) GzipSection(name string, fn func(section *Writer) error) error {
 	section := NewWriter()
 	if err := fn(section); err != nil {
@@ -316,6 +323,39 @@ func DecodePreregister(body []byte) (PreregisterInfo, error) {
 		info.PlayerName = playerName
 	}
 	return info, nil
+}
+
+func EncodeRelayBecomeServer(uuid string, isOwner bool, roomCode string, version int) (Packet, error) {
+	w := NewWriter()
+	// Always use version 2 for RELAY_BECOME_SERVER if possible, as it's more complete
+	w.Byte(2) // Packet Version
+	w.Bool(true)
+	w.Bool(true)
+	w.Bool(true)
+	if err := w.String(uuid); err != nil {
+		return Packet{}, err
+	}
+	w.Bool(false) // isMod
+	w.Bool(true)  // showPublicly
+	w.Bool(true)
+	if err := w.String("Relay: " + roomCode); err != nil {
+		return Packet{}, err
+	}
+	w.Bool(false) // useMulticast
+	if err := w.MaybeString(uuid); err != nil {
+		return Packet{}, err
+	}
+	return w.Packet(TypeRelayBecomeServer), nil
+}
+
+func EncodeRelayPow(resultInt int32) Packet {
+	w := NewWriter()
+	w.Int32(resultInt)
+	w.Int32(0)     // authenticateType = 0 (No PoW required)
+	w.Bool(false)  // hasInitInt1
+	w.Bool(false)  // hasInitInt2
+	w.Bool(false)  // unknown_false
+	return w.Packet(TypeRelayPow)
 }
 
 func RequireNoError(err error) {

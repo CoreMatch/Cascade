@@ -97,12 +97,14 @@ func (m *Manager) Create(code, title string, maxPlayers int) (*Room, error) {
 		ServerUUID:   randomHex(16),
 		MaxPlayers:   maxPlayers,
 		MaxUnits:     m.cfg.DefaultMaxUnits,
+		Credits:      1000,
+		FogOfWar:     2,
 		Income:       m.cfg.DefaultIncome,
 		CreatedAt:    time.Now(),
 		players:      make([]*Session, maxPlayers),
 		adminIDs:     make(map[string]bool),
 		AISlot:       -1,
-		gameCommands: make(chan protocol.GameCommandPacket, 128),
+		gameCommands: make(chan CommandRequest, 128),
 		stopCh:       make(chan struct{}),
 		gameState:    game.NewState(),
 	}
@@ -195,6 +197,8 @@ type Room struct {
 	ServerUUID string
 	MaxPlayers int
 	MaxUnits   int
+	Credits    int32
+	FogOfWar   int32
 	Income     float32
 	CreatedAt  time.Time
 
@@ -315,7 +319,7 @@ func (r *Room) processTick() {
 			}
 		}
 
-		if w.Len() > 0 {
+		if len(w.Bytes()) > 0 {
 			gameCmd := protocol.GameCommandPacket{
 				Packet: protocol.Packet{
 					Type: protocol.TypeGameCommand,
@@ -323,7 +327,7 @@ func (r *Room) processTick() {
 				},
 				Data: w.Bytes(),
 			}
-			r.Broadcast(&gameCmd)
+			r.broadcast(gameCmd.Packet)
 		}
 	}
 }
@@ -582,7 +586,7 @@ func (r *Room) Kick(actor, target *Session) error {
 		return fmt.Errorf("only owner can kick another admin")
 	}
 
-	target.systemMessage("你已被移出房间。")
+	_ = target.systemMessage("你已被移出房间。")
 	target.close()
 	return nil
 }
@@ -766,8 +770,8 @@ func (r *Room) buildTeamListPacket(player *Session) (protocol.Packet, error) {
 		return protocol.Packet{}, err
 	}
 
-	w.Int32(2)
-	w.Int32(0)
+	w.Int32(r.FogOfWar)
+	w.Int32(r.Credits)
 	w.Bool(true)
 	w.Int32(1)
 	w.Byte(5)
@@ -786,8 +790,6 @@ func (r *Room) buildTeamListPacket(player *Session) (protocol.Packet, error) {
 func buildTeamSlotPayload(slot int, member *slotParticipant, roleInt int32) (*protocol.Writer, error) {
 	w := protocol.NewWriter()
 
-	// 示例项目中的 TEAM_LIST 解析表明，单槽位在名字前至少包含 13 字节：
-	// Int + Byte + Int + Int
 	w.Int32(int32(slot))
 	w.Byte(byte(slot))
 	w.Int32(0)
@@ -797,37 +799,36 @@ func buildTeamSlotPayload(slot int, member *slotParticipant, roleInt int32) (*pr
 		return nil, err
 	}
 
-	// 名字后按示例项目的读取顺序写入：
-	// Boolean
-	// Int + Long
-	// Boolean + Int
-	// Int + Byte
-	// Boolean * 2
-	// Boolean * 2 + Int
-	// IsString + Int
-	// IsInt * 4
-	// Int
+	w.Bool(false) // isReady
+	w.Int32(0)    // ping
+	w.Int64(0)    // UID
+
+	// Version >= 55
 	w.Bool(false)
 	w.Int32(0)
-	w.Int64(0)
-	w.Bool(false)
-	w.Int32(0)
+
+	// Version >= 91
 	w.Int32(0)
 	w.Byte(0)
+
+	// Version >= 97
 	w.Bool(false)
 	w.Bool(false)
+
+	// Version >= 125
 	w.Bool(false)
 	w.Bool(false)
 	w.Int32(0)
+
+	// Version >= 149
 	if err := w.MaybeString(""); err != nil {
 		return nil, err
 	}
+	w.Int32(roleInt) // Admin marker
 
-	// 这一位在示例项目里会被覆盖成 admin 标记。
-	w.Int32(roleInt)
-
+	// Version >= 156
 	for i := 0; i < 4; i++ {
-		w.Bool(false)
+		w.Bool(false) // IsInt (Boolean prefix)
 	}
 	w.Int32(0)
 

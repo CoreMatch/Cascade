@@ -16,23 +16,26 @@ import (
 	"time"
 
 	"rwgin/internal/config"
-	"rwgin/internal/game"
 	"rwgin/internal/protocol"
 )
 
 type Server struct {
-	cfg          config.Config
-	logger       *log.Logger
-	gameSessions *game.SessionManager
-	listener     net.Listener
+	cfg      config.Config
+	logger   *log.Logger
+	rooms    *Manager
+	listener net.Listener
 }
 
 func NewServer(cfg config.Config, logger *log.Logger) *Server {
 	return &Server{
-		cfg:          cfg,
-		logger:       logger,
-		gameSessions: game.NewSessionManager(),
+		cfg:    cfg,
+		logger: logger,
+		rooms:  NewManager(cfg),
 	}
+}
+
+func (s *Server) Rooms() *Manager {
+	return s.rooms
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -94,9 +97,11 @@ type Session struct {
 	clientVersion int
 	preregister   protocol.PreregisterInfo
 
-	roomMu      sync.RWMutex
-	gameSession *game.Session
-	slot        int
+	pendingRoomCode string
+
+	roomMu sync.RWMutex
+	room   *Room
+	slot   int
 }
 
 var sessionCounter atomic.Uint64
@@ -287,6 +292,8 @@ func (s *Session) handlePacket(packet protocol.Packet) error {
 		return s.handlePreregister(packet.Body)
 	case protocol.TypeRegisterPlayer:
 		return s.handleRegister(packet.Body)
+	case protocol.TypeRelayPowReceive:
+		return s.handlePowReceive(packet.Body)
 	case protocol.TypeRelayPromptReply:
 		return s.handlePromptReply(packet.Body)
 	case protocol.TypeHeartbeat:
@@ -307,34 +314,35 @@ func (s *Session) handlePacket(packet protocol.Packet) error {
 }
 
 func (s *Session) handlePreregister(body []byte) error {
-	if sessionState(s.state.Load()) != stateInit {
-		return nil
-	}
-
 	info, err := protocol.DecodePreregister(body)
 	if err != nil {
 		return err
 	}
 	s.preregister = info
 	s.clientVersion = int(info.ClientVersion)
-	if s.clientVersion == 0 {
-		s.clientVersion = s.server.cfg.DefaultClientVersion
-	}
-	// #region debug-point A:decode-preregister
-	debugReport(debugRunID(), "A", "internal/relay/server.go:handlePreregister", "[DEBUG] preregister decoded", map[string]any{
-		"sessionId":     s.id,
-		"packetVersion": info.PacketVersion,
-		"clientVersion": info.ClientVersion,
-		"query":         info.Query,
-		"playerName":    info.PlayerName,
-	})
-	// #endregion
+	s.name = info.PlayerName
+	s.pendingRoomCode = info.Query
 
-	packet, err := s.buildPreregisterPacket(s.server.cfg.RelayHandshakeID)
-	if err != nil {
-		return err
+	s.server.logger.Printf("preregister: version=%d, client=%d, room=%s, name=%s", info.PacketVersion, info.ClientVersion, info.Query, info.PlayerName)
+
+	// Reply with server info
+	w := protocol.NewWriter()
+	w.String(s.server.cfg.RelayHandshakeID)
+	w.Int32(1) // Packet Version
+	w.Int32(int32(s.clientVersion))
+	w.Int32(int32(s.clientVersion))
+	w.String("com.corrodinggames.rts.server")
+
+	serverUUID := randomHex(16)
+	if info.Query != "" {
+		if room, ok := s.server.rooms.Get(info.Query); ok {
+			serverUUID = room.ServerUUID
+		}
 	}
-	if err := s.Send(packet); err != nil {
+	w.String(serverUUID)
+	w.Int32(javaHash("Dr @ 2022"))
+
+	if err := s.Send(w.Packet(protocol.TypePreregister)); err != nil {
 		return err
 	}
 
@@ -382,7 +390,16 @@ func (s *Session) handleRegister(body []byte) error {
 		return err
 	}
 
-	query := strings.TrimSpace(strings.ToUpper(s.preregister.Query))
+	if err := s.Send(protocol.EncodeRelayPow(int32(time.Now().Unix()))); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Session) handlePowReceive(body []byte) error {
+	// For authenticateType = 0, we just proceed.
+	query := strings.TrimSpace(strings.ToUpper(s.pendingRoomCode))
 	if query != "" && query != "RELAYCN" {
 		return s.joinRoom(query)
 	}
@@ -414,8 +431,8 @@ func (s *Session) handlePromptReply(body []byte) error {
 }
 
 func (s *Session) handleChat(body []byte) error {
-	gameSession := s.GameSession()
-	if gameSession == nil {
+	room := s.Room()
+	if room == nil {
 		return nil
 	}
 
@@ -427,70 +444,136 @@ func (s *Session) handleChat(body []byte) error {
 		return nil
 	}
 
-	player := gameSession.GetPlayer(game.PlayerID(s.playerID))
-	if player == nil {
-		return nil // Player not found in session
-	}
-
-	gameSession.HandleChatMessage(player, message)
+	room.broadcastChat(s.name, message)
 	return nil
 }
 
 func (s *Session) handleStartGame(packet protocol.Packet) error {
-	gameSession := s.GameSession()
-	if gameSession == nil {
+	room := s.Room()
+	if room == nil {
 		return nil
 	}
 
-	player := gameSession.GetPlayer(game.PlayerID(s.playerID))
-	if player == nil {
-		return nil // Player not found in session
+	if !room.IsOwner(s) {
+		return s.systemMessage("只有房主可以开始游戏。")
 	}
 
-	gameSession.HandleStartGame(player)
+	room.SetInGame(true)
+	room.broadcastSystem(fmt.Sprintf("游戏已由 %s 开始。", s.name))
+
+	startGamePacket, err := protocol.EncodeStartGame()
+	if err == nil {
+		room.broadcast(startGamePacket)
+	}
+
 	return nil
 }
 
 func (s *Session) handleReturnToBattleRoom(packet protocol.Packet) error {
-	gameSession := s.GameSession()
-	if gameSession == nil {
+	room := s.Room()
+	if room == nil {
 		return nil
 	}
 
-	// TODO: Implement return to battle room logic in game.Session
-	s.server.logger.Printf("player %s is returning to battle room in session %s", s.name, gameSession.ID)
+	s.server.logger.Printf("player %s is returning to battle room in room %s", s.name, room.Code)
+	room.SetInGame(false)
 
-	return nil
+	return room.broadcastTeamList()
 }
 
 func (s *Session) handleGameCommand(packet protocol.Packet) error {
-	gameSession := s.GameSession()
-	if gameSession == nil {
+	room := s.Room()
+	if room == nil {
 		return nil
 	}
 
-	player := gameSession.GetPlayer(game.PlayerID(s.playerID))
-	if player == nil {
-		return nil // Player not found in session
+	gp, err := protocol.DecodeGameCommandPacket(packet.Body)
+	if err != nil {
+		return err
 	}
 
-	gameSession.SubmitCommand(player, packet)
+	room.PushCommand(CommandRequest{
+		Sender: s,
+		Packet: gp,
+	})
 	return nil
 }
 
 func (s *Session) joinRoom(code string) error {
-	gameSession := s.server.gameSessions.CreateSession(code)
-	gameSession.AddPlayer(&game.Player{
-		ID:   game.PlayerID(s.playerID),
-		Name: s.name,
-		Conn: s, // s (the relay.Session) implements game.PlayerConn
-	})
-	s.gameSession = gameSession
+	room, isNew, err := s.server.rooms.JoinOrCreate(code, s)
+	if err != nil {
+		return err
+	}
 
-	s.server.logger.Printf("player %s joined game session %s", s.name, code)
+	s.server.logger.Printf("player %s joined room %s (new: %v)", s.name, room.Code, isNew)
+
+	// If owner, send RELAY_BECOME_SERVER
+	if room.IsOwner(s) {
+		becomeServerPacket, err := protocol.EncodeRelayBecomeServer(room.ServerUUID, true, room.Code, s.clientVersion)
+		if err != nil {
+			return err
+		}
+		if err := s.Send(becomeServerPacket); err != nil {
+			return err
+		}
+	}
+
+	// Send initial room state
+	if err := s.sendServerInfo(room); err != nil {
+		return err
+	}
+
+	if err := room.broadcastTeamList(); err != nil {
+		return err
+	}
 
 	s.state.Store(int32(stateActive))
 	return nil
+}
+
+func (s *Session) sendServerInfo(room *Room) error {
+	w := protocol.NewWriter()
+
+	// 1. Server ID (String)
+	if err := w.String(room.ServerUUID); err != nil {
+		return err
+	}
+	// 2. Client Version (Int32)
+	w.Int32(int32(s.server.cfg.DefaultClientVersion))
+	// 3. Map Type (Int32) - 0: Custom Map
+	w.Int32(0)
+	// 4. Map/Room Name (String)
+	if err := w.String(room.MapName); err != nil {
+		return err
+	}
+	// 5. Credits (Int32)
+	w.Int32(room.Credits)
+	// 6. Fog of War (Int32) - 0: None, 1: Fog, 2: Mist
+	w.Int32(room.FogOfWar)
+	// 7. Revealed Map (Boolean)
+	w.Bool(false)
+	// 8. AI Difficulty (Int32)
+	w.Int32(0)
+	// 9. Protocol Version Byte (Byte)
+	w.Byte(2)
+	// 10. Boolean Flag 1 (Boolean)
+	w.Bool(false)
+	// 11. Boolean Flag 2 / Admin UI (Boolean)
+	w.Bool(room.IsAdmin(s))
+
+	// Protocol Version >= 1 fields (skipped if version >= 1)
+	w.Int32(0)
+	w.Int32(0)
+
+	// Protocol Version >= 2 extra fields
+	// 12. Init Unit (Int32)
+	w.Int32(1)
+	// 13. Income (Float32)
+	w.Float32(room.Income)
+	// 14. Nukes (Boolean)
+	w.Bool(true)
+
+	return s.Send(w.Packet(protocol.TypeServerInfo))
 }
 
 func (s *Session) Send(packet protocol.Packet) error {
@@ -504,7 +587,7 @@ func (s *Session) Send(packet protocol.Packet) error {
 
 func (s *Session) close() {
 	s.once.Do(func() {
-		gameSession := s.GameSession()
+		room := s.Room()
 		// #region debug-point E:session-close
 		debugReport(debugRunID(), "E", "internal/relay/server.go:close", "[DEBUG] session closing", map[string]any{
 			"sessionId": s.id,
@@ -513,8 +596,8 @@ func (s *Session) close() {
 			"slot":      s.Slot(),
 			"state":     s.state.Load(),
 			"roomCode": func() string {
-				if gameSession != nil {
-					return gameSession.ID
+				if room != nil {
+					return room.Code
 				}
 				return ""
 			}(),
@@ -524,26 +607,50 @@ func (s *Session) close() {
 		close(s.closeCh)
 		_ = s.conn.Close()
 
-		if gameSession != nil {
-			gameSession.RemovePlayer(game.PlayerID(s.playerID))
-			s.server.logger.Printf("player %s removed from game session %s", s.name, gameSession.ID)
+		if room != nil {
+			room.Leave(s)
+			s.server.logger.Printf("player %s removed from room %s", s.name, room.Code)
+			_ = room.broadcastTeamList()
+			s.server.rooms.RemoveIfEmpty(room)
 		}
 
 		s.server.logger.Printf("client disconnected: %s", s.conn.RemoteAddr())
 	})
 }
 
-func (s *Session) setGameSession(session *game.Session, slot int) {
+func (s *Session) setRoom(room *Room, slot int) {
 	s.roomMu.Lock()
 	defer s.roomMu.Unlock()
-	s.gameSession = session
+	s.room = room
 	s.slot = slot
 }
 
-func (s *Session) GameSession() *game.Session {
+func (s *Session) Room() *Room {
 	s.roomMu.RLock()
 	defer s.roomMu.RUnlock()
-	return s.gameSession
+	return s.room
+}
+
+func (s *Session) systemMessage(message string) error {
+	packet, err := protocol.EncodeSystemMessage(message)
+	if err != nil {
+		return err
+	}
+	return s.Send(packet)
+}
+
+func (s *Session) buildPreregisterPacket(handshakeID string) (protocol.Packet, error) {
+	w := protocol.NewWriter()
+	if err := w.String(handshakeID); err != nil {
+		return protocol.Packet{}, err
+	}
+	return w.Packet(protocol.TypePreregister), nil
+}
+
+func (s *Session) setGameSession(slot int) {
+	s.roomMu.Lock()
+	defer s.roomMu.Unlock()
+	s.slot = slot
 }
 
 func (s *Session) Slot() int {

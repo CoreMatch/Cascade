@@ -131,7 +131,7 @@ func (s *Session) AddPlayer(player *Player) {
 	joinMsg := fmt.Sprintf("%s has joined the game.", player.Name)
 	packet, err := protocol.EncodeSystemMessage(joinMsg)
 	if err == nil {
-		s.broadcast(packet, nil) // Broadcast to all, excluding no one
+		s.broadcast(packet, "") // Broadcast to all, excluding no one
 	}
 }
 
@@ -152,13 +152,13 @@ func (s *Session) HandleStartGame(starter *Player) {
 	startMsg := fmt.Sprintf("The game has been started by %s.", starter.Name)
 	packet, err := protocol.EncodeSystemMessage(startMsg)
 	if err == nil {
-		s.broadcast(packet, nil)
+		s.broadcast(packet, "")
 	}
 
 	// Also broadcast the actual "start game" packet.
 	startGamePacket, err := protocol.EncodeStartGame()
 	if err == nil {
-		s.broadcast(startGamePacket, nil)
+		s.broadcast(startGamePacket, "")
 	}
 }
 

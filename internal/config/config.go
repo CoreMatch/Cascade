@@ -26,7 +26,7 @@ func Load() Config {
 		GameListenAddr:       envOrDefault("RWGIN_GAME_ADDR", ":5123"),
 		HTTPListenAddr:       envOrDefault("RWGIN_HTTP_ADDR", ":8080"),
 		ServerID:             envOrDefault("RWGIN_SERVER_ID", "rwgin"),
-		RelayHandshakeID:     envOrDefault("RWGIN_RELAY_ID", randomHex(16)),
+		RelayHandshakeID:     envOrDefault("RWGIN_RELAY_ID", "net.rwhps.server"),
 		RoomCodePrefix:       envOrDefault("RWGIN_ROOM_PREFIX", "GW"),
 		DefaultMapName:       envOrDefault("RWGIN_DEFAULT_MAP", "Custom Map"),
 		DefaultRoomName:      envOrDefault("RWGIN_DEFAULT_ROOM", "Gin Room"),

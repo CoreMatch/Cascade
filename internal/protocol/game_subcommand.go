@@ -25,6 +25,11 @@ type SubCommandChatPacket struct {
 
 func (p SubCommandChatPacket) subCommand() {}
 
+func (p *SubCommandChatPacket) Encode(w *Writer) error {
+	w.Byte(SubCommandChat)
+	return w.String(p.Message)
+}
+
 type SubCommandUnitAddPacket struct {
 	Count      int32
 	UnitType   string
@@ -36,15 +41,19 @@ type SubCommandUnitAddPacket struct {
 func (p SubCommandUnitAddPacket) subCommand() {}
 
 func (p *SubCommandUnitAddPacket) Encode(w *Writer) error {
-	w.WriteByte(SubCommandUnitAdd)
-	w.WriteByte(0) // Unknown byte
-	w.WriteInt32(p.Count)
-	w.WriteString(p.UnitType)
-	w.WriteFloat32(p.X)
-	w.WriteFloat32(p.Y)
-	w.WriteString(p.Owner)
-	w.WriteBool(p.ShouldSync)
-	return w.Err()
+	w.Byte(SubCommandUnitAdd)
+	w.Byte(0) // Unknown byte
+	w.Int32(p.Count)
+	if err := w.String(p.UnitType); err != nil {
+		return err
+	}
+	w.Float32(p.X)
+	w.Float32(p.Y)
+	if err := w.String(p.Owner); err != nil {
+		return err
+	}
+	w.Bool(p.ShouldSync)
+	return nil
 }
 
 type SubCommandUnitMovePacket struct {
@@ -53,6 +62,17 @@ type SubCommandUnitMovePacket struct {
 }
 
 func (p SubCommandUnitMovePacket) subCommand() {}
+
+func (p *SubCommandUnitMovePacket) Encode(w *Writer) error {
+	w.Byte(SubCommandUnitMove)
+	w.Int32(int32(len(p.UnitIDs)))
+	for _, id := range p.UnitIDs {
+		w.Int32(id)
+	}
+	w.Float32(p.X)
+	w.Float32(p.Y)
+	return nil
+}
 
 type SubCommandServerUnitAddPacket struct {
 	UnitID   int64
@@ -64,13 +84,17 @@ type SubCommandServerUnitAddPacket struct {
 func (p SubCommandServerUnitAddPacket) subCommand() {}
 
 func (p *SubCommandServerUnitAddPacket) Encode(w *Writer) error {
-	w.WriteByte(SubCommandServerUnitAdd)
-	w.WriteInt64(p.UnitID)
-	w.WriteString(p.UnitType)
-	w.WriteFloat32(p.X)
-	w.WriteFloat32(p.Y)
-	w.WriteString(p.Owner)
-	return w.Err()
+	w.Byte(SubCommandServerUnitAdd)
+	w.Int64(p.UnitID)
+	if err := w.String(p.UnitType); err != nil {
+		return err
+	}
+	w.Float32(p.X)
+	w.Float32(p.Y)
+	if err := w.String(p.Owner); err != nil {
+		return err
+	}
+	return nil
 }
 
 type SubCommandServerUnitMovePacket struct {
@@ -81,11 +105,11 @@ type SubCommandServerUnitMovePacket struct {
 func (p SubCommandServerUnitMovePacket) subCommand() {}
 
 func (p *SubCommandServerUnitMovePacket) Encode(w *Writer) error {
-	w.WriteByte(SubCommandServerUnitMove)
-	w.WriteInt64(p.UnitID)
-	w.WriteFloat32(p.X)
-	w.WriteFloat32(p.Y)
-	return w.Err()
+	w.Byte(SubCommandServerUnitMove)
+	w.Int64(p.UnitID)
+	w.Float32(p.X)
+	w.Float32(p.Y)
+	return nil
 }
 
 // ParseSubCommands parses the data from a GameCommandPacket into a slice of SubCommands.
