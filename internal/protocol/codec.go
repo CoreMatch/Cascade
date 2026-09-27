@@ -327,23 +327,38 @@ func DecodePreregister(body []byte) (PreregisterInfo, error) {
 
 func EncodeRelayBecomeServer(uuid string, isOwner bool, roomCode string, version int) (Packet, error) {
 	w := NewWriter()
-	// Always use version 2 for RELAY_BECOME_SERVER if possible, as it's more complete
-	w.Byte(2) // Packet Version
-	w.Bool(true)
-	w.Bool(true)
-	w.Bool(true)
-	if err := w.String(uuid); err != nil {
-		return Packet{}, err
-	}
-	w.Bool(false) // isMod
-	w.Bool(true)  // showPublicly
-	w.Bool(true)
-	if err := w.String("Relay: " + roomCode); err != nil {
-		return Packet{}, err
-	}
-	w.Bool(false) // useMulticast
-	if err := w.MaybeString(uuid); err != nil {
-		return Packet{}, err
+	// RW uses 172 as a threshold for new relay protocol
+	if version >= 172 {
+		w.Byte(2) // Packet Version
+		w.Bool(true)
+		w.Bool(true)
+		w.Bool(true)
+		if err := w.String(uuid); err != nil {
+			return Packet{}, err
+		}
+		w.Bool(false) // isMod
+		w.Bool(true)  // showPublicly
+		w.Bool(true)
+		if err := w.String("Relay: " + roomCode); err != nil {
+			return Packet{}, err
+		}
+		w.Bool(false) // useMulticast
+		if err := w.MaybeString(uuid); err != nil {
+			return Packet{}, err
+		}
+	} else {
+		w.Byte(1) // Packet Version
+		w.Bool(true)
+		w.Bool(true)
+		if err := w.MaybeString(uuid); err != nil {
+			return Packet{}, err
+		}
+		w.Bool(false) // useMods
+		w.Bool(true)  // showPublicly
+		if err := w.String("Relay: " + roomCode); err != nil {
+			return Packet{}, err
+		}
+		w.Bool(false) // useMulticast
 	}
 	return w.Packet(TypeRelayBecomeServer), nil
 }

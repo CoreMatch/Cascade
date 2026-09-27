@@ -73,7 +73,7 @@ func (m *Manager) Get(code string) (*Room, bool) {
 	return room, ok
 }
 
-func (m *Manager) Create(code, title string, maxPlayers int) (*Room, error) {
+func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error) {
 	if maxPlayers <= 0 {
 		maxPlayers = m.cfg.DefaultMaxPlayers
 	}
@@ -94,7 +94,7 @@ func (m *Manager) Create(code, title string, maxPlayers int) (*Room, error) {
 		Code:         normalized,
 		Title:        defaultIfBlank(title, m.cfg.DefaultRoomName+" "+normalized),
 		MapName:      m.cfg.DefaultMapName,
-		ServerUUID:   randomHex(16),
+		ServerUUID:   defaultIfBlank(uuid, randomHex(16)),
 		MaxPlayers:   maxPlayers,
 		MaxUnits:     m.cfg.DefaultMaxUnits,
 		Credits:      1000,
@@ -116,11 +116,11 @@ func (m *Manager) Create(code, title string, maxPlayers int) (*Room, error) {
 	return room, nil
 }
 
-func (m *Manager) JoinOrCreate(code string, session *Session) (*Room, bool, error) {
+func (m *Manager) JoinOrCreate(code, uuid string, session *Session) (*Room, bool, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(code))
 	if normalized == "" {
 		var err error
-		room, err := m.Create("", "", m.cfg.DefaultMaxPlayers)
+		room, err := m.Create("", "", uuid, m.cfg.DefaultMaxPlayers)
 		if err != nil {
 			return nil, false, err
 		}
@@ -135,7 +135,7 @@ func (m *Manager) JoinOrCreate(code string, session *Session) (*Room, bool, erro
 	m.mu.RUnlock()
 	if !ok {
 		var err error
-		room, err = m.Create(normalized, "", m.cfg.DefaultMaxPlayers)
+		room, err = m.Create(normalized, "", uuid, m.cfg.DefaultMaxPlayers)
 		if err != nil {
 			return nil, false, err
 		}

@@ -42,7 +42,7 @@ func Router(rooms *relay.Manager) *gin.Engine {
 			return
 		}
 
-		room, err := rooms.Create(req.Code, req.Title, req.MaxPlayers)
+		room, err := rooms.Create(req.Code, req.Title, "", req.MaxPlayers)
 		if err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return

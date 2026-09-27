@@ -98,6 +98,7 @@ type Session struct {
 	preregister   protocol.PreregisterInfo
 
 	pendingRoomCode string
+	pendingUUID     string
 
 	roomMu sync.RWMutex
 	room   *Room
@@ -198,6 +199,7 @@ func (s *Session) run(ctx context.Context) {
 	// #endregion
 
 	go s.writeLoop()
+	go s.heartbeatLoop(ctx)
 	defer s.close()
 
 	for {
@@ -278,6 +280,24 @@ func (s *Session) writeLoop() {
 	}
 }
 
+func (s *Session) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.closeCh:
+			return
+		case <-ticker.C:
+			if sessionState(s.state.Load()) == stateActive {
+				_ = s.Send(protocol.Packet{Type: protocol.TypeHeartbeat})
+			}
+		}
+	}
+}
+
 func (s *Session) ID() string {
 	return s.playerID
 }
@@ -322,6 +342,12 @@ func (s *Session) handlePreregister(body []byte) error {
 	s.clientVersion = int(info.ClientVersion)
 	s.name = info.PlayerName
 	s.pendingRoomCode = info.Query
+	s.pendingUUID = randomHex(16)
+	if info.Query != "" {
+		if room, ok := s.server.rooms.Get(info.Query); ok {
+			s.pendingUUID = room.ServerUUID
+		}
+	}
 
 	s.server.logger.Printf("preregister: version=%d, client=%d, room=%s, name=%s", info.PacketVersion, info.ClientVersion, info.Query, info.PlayerName)
 
@@ -332,14 +358,7 @@ func (s *Session) handlePreregister(body []byte) error {
 	w.Int32(int32(s.clientVersion))
 	w.Int32(int32(s.clientVersion))
 	w.String("com.corrodinggames.rts.server")
-
-	serverUUID := randomHex(16)
-	if info.Query != "" {
-		if room, ok := s.server.rooms.Get(info.Query); ok {
-			serverUUID = room.ServerUUID
-		}
-	}
-	w.String(serverUUID)
+	w.String(s.pendingUUID)
 	w.Int32(javaHash("Dr @ 2022"))
 
 	if err := s.Send(w.Packet(protocol.TypePreregister)); err != nil {
@@ -500,7 +519,7 @@ func (s *Session) handleGameCommand(packet protocol.Packet) error {
 }
 
 func (s *Session) joinRoom(code string) error {
-	room, isNew, err := s.server.rooms.JoinOrCreate(code, s)
+	room, isNew, err := s.server.rooms.JoinOrCreate(code, s.pendingUUID, s)
 	if err != nil {
 		return err
 	}
