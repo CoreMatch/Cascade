@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,16 +44,41 @@ type RoomDetail struct {
 }
 
 type Manager struct {
-	cfg   config.Config
-	mu    sync.RWMutex
-	rooms map[string]*Room
+	cfg           config.Config
+	mu            sync.RWMutex
+	rooms         map[string]*Room
+	availableMaps []string
 }
 
 func NewManager(cfg config.Config) *Manager {
-	return &Manager{
+	m := &Manager{
 		cfg:   cfg,
 		rooms: make(map[string]*Room),
 	}
+	m.scanMaps()
+	return m
+}
+
+func (m *Manager) scanMaps() {
+	files, err := os.ReadDir(m.cfg.MapsDir)
+	if err != nil {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.availableMaps = nil
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".tmx") {
+			m.availableMaps = append(m.availableMaps, f.Name())
+		}
+	}
+}
+
+func (m *Manager) ListMaps() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.availableMaps
 }
 
 func (m *Manager) List() []RoomSummary {
@@ -90,10 +117,18 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		return nil, fmt.Errorf("room already exists: %s", normalized)
 	}
 
+	mapName := defaultIfBlank(m.cfg.DefaultMapName, "unit_types_test.tmx")
+	var gameMap *game.Map
+	mapPath := filepath.Join(m.cfg.MapsDir, mapName)
+	if loaded, err := game.LoadMap(mapPath); err == nil {
+		gameMap = loaded
+	}
+
 	room := &Room{
 		Code:         normalized,
 		Title:        defaultIfBlank(title, m.cfg.DefaultRoomName+" "+normalized),
-		MapName:      m.cfg.DefaultMapName,
+		MapName:      mapName,
+		GameMap:      gameMap,
 		ServerUUID:   defaultIfBlank(uuid, randomHex(16)),
 		MaxPlayers:   maxPlayers,
 		MaxUnits:     m.cfg.DefaultMaxUnits,
@@ -109,6 +144,9 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		gameState:    game.NewState(),
 		commands:     DefaultRegistry(),
 		startVotes:   make(map[string]bool),
+	}
+	if gameMap != nil {
+		room.gameState.SetMap(gameMap)
 	}
 	m.rooms[normalized] = room
 
@@ -196,6 +234,7 @@ type Room struct {
 	Code       string
 	Title      string
 	MapName    string
+	GameMap    *game.Map
 	ServerUUID string
 	MaxPlayers int
 	MaxUnits   int

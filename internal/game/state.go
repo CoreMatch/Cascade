@@ -26,6 +26,7 @@ type State struct {
 	units      map[UnitID]*Unit
 	nextUnitID UnitID
 	changes    map[UnitID]ChangeType
+	gameMap    *Map
 }
 
 // NewState creates a new game state.
@@ -37,10 +38,22 @@ func NewState() *State {
 	}
 }
 
+func (s *State) SetMap(m *Map) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gameMap = m
+}
+
 // AddUnit creates a new unit, assigns it a unique ID, and adds it to the game state.
 func (s *State) AddUnit(unitType, owner string, x, y float32) *Unit {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Optional: Check if the position is walkable
+	if s.gameMap != nil && !s.gameMap.IsWalkable(x, y) {
+		// For now, we allow adding units to blocked tiles (e.g., initial spawns)
+		// but you might want to find the nearest walkable tile here.
+	}
 
 	newUnit := &Unit{
 		ID:    s.nextUnitID,
@@ -60,6 +73,13 @@ func (s *State) AddUnit(unitType, owner string, x, y float32) *Unit {
 func (s *State) MoveUnits(ids []UnitID, x, y float32) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Collision check
+	if s.gameMap != nil && !s.gameMap.IsWalkable(x, y) {
+		// If the destination is blocked, we don't move the units.
+		// In a real game, you might move them as close as possible.
+		return
+	}
 
 	for _, id := range ids {
 		if unit, ok := s.units[id]; ok {

@@ -19,6 +19,7 @@ type Config struct {
 	DefaultClientVersion int
 	DefaultIncome        float32
 	DefaultMaxUnits      int
+	MapsDir              string
 }
 
 func Load() Config {
@@ -28,12 +29,13 @@ func Load() Config {
 		ServerID:             envOrDefault("RWGIN_SERVER_ID", "rwgin"),
 		RelayHandshakeID:     envOrDefault("RWGIN_RELAY_ID", "net.rwhps.server"),
 		RoomCodePrefix:       envOrDefault("RWGIN_ROOM_PREFIX", "GW"),
-		DefaultMapName:       envOrDefault("RWGIN_DEFAULT_MAP", "Custom Map"),
+		DefaultMapName:       envOrDefault("RWGIN_DEFAULT_MAP", "unit_types_test.tmx"),
 		DefaultRoomName:      envOrDefault("RWGIN_DEFAULT_ROOM", "Gin Room"),
 		DefaultMaxPlayers:    envIntOrDefault("RWGIN_MAX_PLAYERS", 8),
 		DefaultClientVersion: envIntOrDefault("RWGIN_CLIENT_VERSION", 151),
 		DefaultIncome:        envFloat32OrDefault("RWGIN_INCOME", 1.0),
 		DefaultMaxUnits:      envIntOrDefault("RWGIN_MAX_UNITS", 200),
+		MapsDir:              envOrDefault("RWGIN_MAPS_DIR", "assets/maps"),
 	}
 }
 
