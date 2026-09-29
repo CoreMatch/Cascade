@@ -306,8 +306,8 @@ func (s *Session) handleChat(body []byte) error {
 	if strings.TrimSpace(message) == "" {
 		return nil
 	}
-
-	room.broadcastChat(s.name, message)
+    
+	room.handleChat(s, message)
 	return nil
 }
 

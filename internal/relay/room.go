@@ -3,7 +3,7 @@ package relay
 import (
 	"crypto/rand"
 	"encoding/hex"
-        "fmt"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,6 +107,7 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		gameCommands: make(chan CommandRequest, 128),
 		stopCh:       make(chan struct{}),
 		gameState:    game.NewState(),
+		commands:     DefaultRegistry(),
 	}
 	m.rooms[normalized] = room
 
@@ -212,6 +213,7 @@ type Room struct {
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
 	gameState    *game.State
+	commands     *CommandRegistry
 }
 
 func (r *Room) Summary() RoomSummary {
@@ -237,18 +239,18 @@ func (r *Room) run() {
 	defer r.wg.Done()
 
 	ticker := time.NewTicker(time.Second / 60)
-        teamListTicker := time.NewTicker(time.Second)
+	teamListTicker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-        defer teamListTicker.Stop()
+	defer teamListTicker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			r.processTick()
-                case <-teamListTicker.C:
-                        if !r.IsInGame() && r.PlayerCount() > 0 {
-                                _ = r.broadcastTeamList()
-                        }
+		case <-teamListTicker.C:
+			if !r.IsInGame() && r.PlayerCount() > 0 {
+				_ = r.broadcastTeamList()
+			}
 		case <-r.stopCh:
 			return
 		}
@@ -281,7 +283,7 @@ func (r *Room) processTick() {
 		for _, subCmd := range subCommands {
 			switch sc := subCmd.(type) {
 			case protocol.SubCommandChatPacket:
-				r.broadcastChat(cmdRequest.Sender.Name(), sc.Message)
+				r.handleChat(cmdRequest.Sender, sc.Message)
 			case protocol.SubCommandUnitAddPacket:
 				r.gameState.AddUnit(sc.UnitType, cmdRequest.Sender.ID(), sc.X, sc.Y)
 			case protocol.SubCommandUnitMovePacket:
@@ -664,9 +666,13 @@ func (r *Room) broadcastSystem(message string) {
 	r.broadcast(packet)
 }
 
-func (r *Room) broadcastChat(sender, message string) {
-	packet := buildChatPacket(sender, message, 0)
+func (r *Room) handleChat(sender Identity, message string) {
+	// Broadcast the chat message to everyone (including the sender)
+	packet := buildChatPacket(sender.Name(), message, 0)
 	r.broadcast(packet)
+
+	// Process as a command if applicable
+	r.commands.Handle(r, sender, message)
 }
 
 func (r *Room) broadcastTeamList() error {
@@ -705,48 +711,48 @@ func (r *Room) buildTeamListPacket(player *Session) (protocol.Packet, error) {
 	w.Bool(false)
 	w.Int32(int32(r.MaxPlayers))
 
-        r.mu.RLock()
-        participants := r.slotParticipantsLocked()
-        r.mu.RUnlock()
-        if err := w.GzipSection("teams", func(section *protocol.Writer) error {
-                for slot, member := range participants {
-                        if member == nil {
-                                section.Bool(false)
-                                continue
-                        }
+	r.mu.RLock()
+	participants := r.slotParticipantsLocked()
+	r.mu.RUnlock()
+	if err := w.GzipSection("teams", func(section *protocol.Writer) error {
+		for slot, member := range participants {
+			if member == nil {
+				section.Bool(false)
+				continue
+			}
 
-                        section.Bool(true)
-                        roleInt := int32(0)
-                        if member.session != nil && r.adminIDs[member.session.playerID] {
-                                roleInt = 1
-                        }
-                        slotPayload, err := buildTeamSlotPayload(slot, member, roleInt)
-                        if err != nil {
-                                return err
-                        }
-                        section.Raw(slotPayload.Bytes())
-                }
-                return nil
-        }); err != nil {
+			section.Bool(true)
+			roleInt := int32(0)
+			if member.session != nil && r.adminIDs[member.session.playerID] {
+				roleInt = 1
+			}
+			slotPayload, err := buildTeamSlotPayload(slot, member, roleInt)
+			if err != nil {
+				return err
+			}
+			section.Raw(slotPayload.Bytes())
+		}
+		return nil
+	}); err != nil {
 		return protocol.Packet{}, err
 	}
 
-        w.Int32(2)
-        w.Int32(0)
-        w.Bool(true)
-        w.Int32(1)
-        w.Byte(5)
-        w.Int32(int32(r.MaxUnits))
-        w.Int32(int32(r.MaxUnits))
-        w.Int32(1)
-        w.Float32(r.Income)
-        w.Bool(true)
-        w.Bool(false)
-        w.Bool(false)
-        w.Bool(false)
-        w.Bool(false)
+	w.Int32(2)
+	w.Int32(0)
+	w.Bool(true)
+	w.Int32(1)
+	w.Byte(5)
+	w.Int32(int32(r.MaxUnits))
+	w.Int32(int32(r.MaxUnits))
+	w.Int32(1)
+	w.Float32(r.Income)
+	w.Bool(true)
+	w.Bool(false)
+	w.Bool(false)
+	w.Bool(false)
+	w.Bool(false)
 
-        return w.Packet(protocol.TypeTeamList), nil
+	return w.Packet(protocol.TypeTeamList), nil
 }
 
 func buildTeamSlotPayload(slot int, member *slotParticipant, roleInt int32) (*protocol.Writer, error) {
