@@ -3,7 +3,7 @@ package relay
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
+        "fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -237,12 +237,18 @@ func (r *Room) run() {
 	defer r.wg.Done()
 
 	ticker := time.NewTicker(time.Second / 60)
+        teamListTicker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+        defer teamListTicker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			r.processTick()
+                case <-teamListTicker.C:
+                        if !r.IsInGame() && r.PlayerCount() > 0 {
+                                _ = r.broadcastTeamList()
+                        }
 		case <-r.stopCh:
 			return
 		}
@@ -699,92 +705,48 @@ func (r *Room) buildTeamListPacket(player *Session) (protocol.Packet, error) {
 	w.Bool(false)
 	w.Int32(int32(r.MaxPlayers))
 
-	r.mu.RLock()
-	participants := r.slotParticipantsLocked()
-	debugSlots := make([]map[string]any, 0, len(participants))
-	for slot, member := range participants {
-		if member == nil {
-			debugSlots = append(debugSlots, map[string]any{
-				"slot": slot,
-				"name": "",
-				"kind": "empty",
-			})
-			continue
-		}
-		kind := "ai"
-		if member.session != nil {
-			kind = "human"
-		}
-		debugSlots = append(debugSlots, map[string]any{
-			"slot": slot,
-			"name": member.name,
-			"kind": kind,
-		})
-	}
-	r.mu.RUnlock()
-	// #region debug-point D:team-list-slots
-	debugReport(debugRunID(), "D", "internal/relay/room.go:buildTeamListPacket", "[DEBUG] team list slot mapping", map[string]any{
-		"roomCode":     r.Code,
-		"forPlayer":    player.name,
-		"forSlot":      player.Slot(),
-		"participants": debugSlots,
-	})
-	// #endregion
-	if err := w.GzipSection("teams", func(section *protocol.Writer) error {
-		for slot, member := range participants {
-			if member == nil {
-				section.Bool(false)
-				continue
-			}
+        r.mu.RLock()
+        participants := r.slotParticipantsLocked()
+        r.mu.RUnlock()
+        if err := w.GzipSection("teams", func(section *protocol.Writer) error {
+                for slot, member := range participants {
+                        if member == nil {
+                                section.Bool(false)
+                                continue
+                        }
 
-			section.Bool(true)
-			roleInt := int32(0)
-			if member.session != nil && r.adminIDs[member.session.playerID] {
-				roleInt = 1
-			}
-			slotPayload, err := buildTeamSlotPayload(slot, member, roleInt)
-			if err != nil {
-				return err
-			}
-			payloadBytes := append([]byte(nil), slotPayload.Bytes()...)
-			section.Raw(payloadBytes)
-			// #region debug-point D:team-list-slot-bytes
-			debugReport(debugRunID(), "D", "internal/relay/room.go:buildTeamListPacket", "[DEBUG] team list slot payload", map[string]any{
-				"roomCode": r.Code,
-				"slot":     slot,
-				"name":     member.name,
-				"kind": func() string {
-					if member.session != nil {
-						return "human"
-					}
-					return "ai"
-				}(),
-				"roleInt":    roleInt,
-				"payloadLen": len(payloadBytes),
-				"payloadHex": hex.EncodeToString(payloadBytes),
-			})
-			// #endregion
-		}
-		return nil
-	}); err != nil {
+                        section.Bool(true)
+                        roleInt := int32(0)
+                        if member.session != nil && r.adminIDs[member.session.playerID] {
+                                roleInt = 1
+                        }
+                        slotPayload, err := buildTeamSlotPayload(slot, member, roleInt)
+                        if err != nil {
+                                return err
+                        }
+                        section.Raw(slotPayload.Bytes())
+                }
+                return nil
+        }); err != nil {
 		return protocol.Packet{}, err
 	}
 
-	w.Int32(r.FogOfWar)
-	w.Int32(r.Credits)
-	w.Bool(true)
-	w.Int32(1)
-	w.Byte(5)
-	w.Int32(int32(r.MaxUnits))
-	w.Int32(int32(r.MaxUnits))
-	w.Int32(1)
-	w.Float32(r.Income)
-	w.Bool(true)
-	w.Bool(false)
-	w.Bool(false)
-	w.Bool(false)
-	w.Bool(false)
-	return w.Packet(protocol.TypeTeamList), nil
+        w.Int32(2)
+        w.Int32(0)
+        w.Bool(true)
+        w.Int32(1)
+        w.Byte(5)
+        w.Int32(int32(r.MaxUnits))
+        w.Int32(int32(r.MaxUnits))
+        w.Int32(1)
+        w.Float32(r.Income)
+        w.Bool(true)
+        w.Bool(false)
+        w.Bool(false)
+        w.Bool(false)
+        w.Bool(false)
+
+        return w.Packet(protocol.TypeTeamList), nil
 }
 
 func buildTeamSlotPayload(slot int, member *slotParticipant, roleInt int32) (*protocol.Writer, error) {

@@ -1,19 +1,15 @@
 package relay
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"log"
-	"net"
-	"net/http"
-	"os"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
+        "context"
+        "errors"
+        "fmt"
+        "log"
+        "net"
+        "strings"
+        "sync"
+        "sync/atomic"
+        "time"
 
 	"rwgin/internal/config"
 	"rwgin/internal/protocol"
@@ -107,74 +103,6 @@ type Session struct {
 
 var sessionCounter atomic.Uint64
 
-// #region debug-point common:runtime-report
-func debugReport(runID, hypothesisID, location, message string, data map[string]any) {
-	envBytes, err := os.ReadFile(".dbg/rw-client-interop.env")
-	if err != nil {
-		return
-	}
-	url := "http://127.0.0.1:7777/event"
-	sessionID := "rw-client-interop"
-	for _, line := range strings.Split(string(envBytes), "\n") {
-		if strings.HasPrefix(line, "DEBUG_SERVER_URL=") {
-			url = strings.TrimPrefix(line, "DEBUG_SERVER_URL=")
-		}
-		if strings.HasPrefix(line, "DEBUG_SESSION_ID=") {
-			sessionID = strings.TrimPrefix(line, "DEBUG_SESSION_ID=")
-		}
-	}
-	body, err := json.Marshal(map[string]any{
-		"sessionId":    sessionID,
-		"runId":        runID,
-		"hypothesisId": hypothesisID,
-		"location":     location,
-		"msg":          message,
-		"data":         data,
-		"ts":           time.Now().UnixMilli(),
-	})
-	if err != nil {
-		return
-	}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 800 * time.Millisecond}
-	resp, err := client.Do(req)
-	if err != nil {
-		return
-	}
-	_ = resp.Body.Close()
-}
-
-func shouldDebugPacket(packetType int32) bool {
-	switch packetType {
-	case protocol.TypePreregisterReceive,
-		protocol.TypePreregister,
-		protocol.TypeRegisterPlayer,
-		protocol.TypeHeartbeat,
-		protocol.TypeHeartbeatResponse,
-		protocol.TypeDisconnect,
-		protocol.TypeRelayVersionInfo,
-		protocol.TypeRelayPrompt,
-		protocol.TypeRelayPromptReply,
-		protocol.TypeRelayBecomeServer,
-		protocol.TypeServerInfo,
-		protocol.TypeTeamList,
-		protocol.TypeStartGame:
-		return true
-	default:
-		return false
-	}
-}
-
-func debugRunID() string {
-	return "post-fix"
-}
-
-// #endregion
-
 func newSession(server *Server, conn net.Conn) *Session {
 	id := fmt.Sprintf("s-%d", sessionCounter.Add(1))
 	session := &Session{
@@ -191,12 +119,6 @@ func newSession(server *Server, conn net.Conn) *Session {
 
 func (s *Session) run(ctx context.Context) {
 	s.server.logger.Printf("client connected: %s", s.conn.RemoteAddr())
-	// #region debug-point A:session-connect
-	debugReport(debugRunID(), "A", "internal/relay/server.go:run", "[DEBUG] session connected", map[string]any{
-		"sessionId": s.id,
-		"remote":    s.conn.RemoteAddr().String(),
-	})
-	// #endregion
 
 	go s.writeLoop()
 	go s.heartbeatLoop(ctx)
@@ -214,43 +136,11 @@ func (s *Session) run(ctx context.Context) {
 		_ = s.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 		packet, err := protocol.ReadPacket(s.conn)
 		if err != nil {
-			// #region debug-point E:read-error-close
-			debugReport(debugRunID(), "E", "internal/relay/server.go:run", "[DEBUG] read loop ended", map[string]any{
-				"sessionId": s.id,
-				"state":     s.state.Load(),
-				"error":     err.Error(),
-			})
-			// #endregion
 			return
 		}
-		// #region debug-point A:packet-in
-		if shouldDebugPacket(packet.Type) {
-			debugReport(debugRunID(), "A", "internal/relay/server.go:run", "[DEBUG] inbound packet", map[string]any{
-				"sessionId": s.id,
-				"type":      packet.Type,
-				"size":      len(packet.Body),
-			})
-		}
-		// #endregion
-		// #region debug-point E:active-packet-in
-		if sessionState(s.state.Load()) == stateActive {
-			debugReport(debugRunID(), "E", "internal/relay/server.go:run", "[DEBUG] active session inbound packet", map[string]any{
-				"sessionId": s.id,
-				"type":      packet.Type,
-				"size":      len(packet.Body),
-			})
-		}
-		// #endregion
 
 		if err := s.handlePacket(packet); err != nil {
 			s.server.logger.Printf("session %s handle packet %d failed: %v", s.id, packet.Type, err)
-			// #region debug-point E:handle-error-close
-			debugReport(debugRunID(), "E", "internal/relay/server.go:run", "[DEBUG] handle packet failed", map[string]any{
-				"sessionId": s.id,
-				"type":      packet.Type,
-				"error":     err.Error(),
-			})
-			// #endregion
 			return
 		}
 	}
@@ -262,15 +152,6 @@ func (s *Session) writeLoop() {
 		case <-s.closeCh:
 			return
 		case packet := <-s.send:
-			// #region debug-point D:packet-out
-			if shouldDebugPacket(packet.Type) {
-				debugReport(debugRunID(), "D", "internal/relay/server.go:writeLoop", "[DEBUG] outbound packet", map[string]any{
-					"sessionId": s.id,
-					"type":      packet.Type,
-					"size":      len(packet.Body),
-				})
-			}
-			// #endregion
 			_ = s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := protocol.WritePacket(s.conn, packet); err != nil {
 				s.close()
@@ -281,19 +162,12 @@ func (s *Session) writeLoop() {
 }
 
 func (s *Session) heartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.closeCh:
 			return
-		case <-ticker.C:
-			if sessionState(s.state.Load()) == stateActive {
-				_ = s.Send(protocol.Packet{Type: protocol.TypeHeartbeat})
-			}
 		}
 	}
 }
@@ -371,21 +245,6 @@ func (s *Session) handlePreregister(body []byte) error {
 
 func (s *Session) handleRegister(body []byte) error {
 	if sessionState(s.state.Load()) != stateAwaitRegister {
-		decodedName, decodedPlayerID, decodeErr := protocol.DecodeRegister(body)
-		// #region debug-point E:register-while-active
-		debugReport(debugRunID(), "E", "internal/relay/server.go:handleRegister", "[DEBUG] register packet received outside await-register", map[string]any{
-			"sessionId":       s.id,
-			"state":           s.state.Load(),
-			"decodedName":     decodedName,
-			"decodedPlayerId": decodedPlayerID,
-			"decodeError": func() string {
-				if decodeErr != nil {
-					return decodeErr.Error()
-				}
-				return ""
-			}(),
-		})
-		// #endregion
 		return nil
 	}
 
@@ -395,15 +254,6 @@ func (s *Session) handleRegister(body []byte) error {
 	}
 	s.name = firstNonBlank(name, s.preregister.PlayerName, "Player")
 	s.playerID = firstNonBlank(playerID, s.id)
-	// #region debug-point B:decode-register
-	debugReport(debugRunID(), "B", "internal/relay/server.go:handleRegister", "[DEBUG] register decoded", map[string]any{
-		"sessionId":     s.id,
-		"name":          s.name,
-		"playerId":      s.playerID,
-		"query":         s.preregister.Query,
-		"clientVersion": s.clientVersion,
-	})
-	// #endregion
 
 	if err := s.Send(protocol.EncodeRelayVersionInfo(int32(s.clientVersion))); err != nil {
 		return err
@@ -440,12 +290,6 @@ func (s *Session) handlePromptReply(body []byte) error {
 	if err != nil {
 		return err
 	}
-	// #region debug-point C:prompt-room-code
-	debugReport(debugRunID(), "C", "internal/relay/server.go:handlePromptReply", "[DEBUG] prompt reply decoded", map[string]any{
-		"sessionId": s.id,
-		"roomCode":  roomCode,
-	})
-	// #endregion
 	return s.joinRoom(roomCode)
 }
 
@@ -526,16 +370,9 @@ func (s *Session) joinRoom(code string) error {
 
 	s.server.logger.Printf("player %s joined room %s (new: %v)", s.name, room.Code, isNew)
 
-	// If owner, send RELAY_BECOME_SERVER
-	if room.IsOwner(s) {
-		becomeServerPacket, err := protocol.EncodeRelayBecomeServer(room.ServerUUID, true, room.Code, s.clientVersion)
-		if err != nil {
-			return err
-		}
-		if err := s.Send(becomeServerPacket); err != nil {
-			return err
-		}
-	}
+        // This service keeps authoritative room state on the server side.
+        // Advertising the room owner as a relay host causes the client to
+        // pivot away from the dedicated connection and drop shortly after join.
 
 	// Send initial room state
 	if err := s.sendServerInfo(room); err != nil {
@@ -552,47 +389,30 @@ func (s *Session) joinRoom(code string) error {
 
 func (s *Session) sendServerInfo(room *Room) error {
 	w := protocol.NewWriter()
+        clientVersion := s.clientVersion
+        if clientVersion <= 0 {
+                clientVersion = s.server.cfg.DefaultClientVersion
+        }
 
-	// 1. Server ID (String)
-	if err := w.String(room.ServerUUID); err != nil {
+        // Relay custom rooms use the shorter server-info shape and advertise a
+        // stable server identifier instead of a per-room UUID.
+        if err := w.String(s.server.cfg.ServerID); err != nil {
 		return err
 	}
-	// 2. Client Version (Int32)
-	w.Int32(int32(s.server.cfg.DefaultClientVersion))
-	// 3. Map Type (Int32) - 0: Custom Map
+        w.Int32(int32(clientVersion))
 	w.Int32(0)
-	// 4. Map/Room Name (String)
-	if err := w.String(room.MapName); err != nil {
+        if err := w.String(room.Title); err != nil {
 		return err
 	}
-	// 5. Credits (Int32)
-	w.Int32(room.Credits)
-	// 6. Fog of War (Int32) - 0: None, 1: Fog, 2: Mist
-	w.Int32(room.FogOfWar)
-	// 7. Revealed Map (Boolean)
+        w.Int32(0)
+        w.Int32(2)
+        w.Bool(true)
+        w.Int32(1)
+        w.Byte(0)
 	w.Bool(false)
-	// 8. AI Difficulty (Int32)
-	w.Int32(0)
-	// 9. Protocol Version Byte (Byte)
-	w.Byte(2)
-	// 10. Boolean Flag 1 (Boolean)
-	w.Bool(false)
-	// 11. Boolean Flag 2 / Admin UI (Boolean)
-	w.Bool(room.IsAdmin(s))
+        w.Bool(false)
 
-	// Protocol Version >= 1 fields (skipped if version >= 1)
-	w.Int32(0)
-	w.Int32(0)
-
-	// Protocol Version >= 2 extra fields
-	// 12. Init Unit (Int32)
-	w.Int32(1)
-	// 13. Income (Float32)
-	w.Float32(room.Income)
-	// 14. Nukes (Boolean)
-	w.Bool(true)
-
-	return s.Send(w.Packet(protocol.TypeServerInfo))
+        return s.Send(w.Packet(protocol.TypeServerInfo))
 }
 
 func (s *Session) Send(packet protocol.Packet) error {
@@ -607,21 +427,6 @@ func (s *Session) Send(packet protocol.Packet) error {
 func (s *Session) close() {
 	s.once.Do(func() {
 		room := s.Room()
-		// #region debug-point E:session-close
-		debugReport(debugRunID(), "E", "internal/relay/server.go:close", "[DEBUG] session closing", map[string]any{
-			"sessionId": s.id,
-			"playerId":  s.playerID,
-			"name":      s.name,
-			"slot":      s.Slot(),
-			"state":     s.state.Load(),
-			"roomCode": func() string {
-				if room != nil {
-					return room.Code
-				}
-				return ""
-			}(),
-		})
-		// #endregion
 		s.state.Store(int32(stateClosed))
 		close(s.closeCh)
 		_ = s.conn.Close()
