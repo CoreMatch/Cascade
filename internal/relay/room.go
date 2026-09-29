@@ -108,6 +108,7 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		stopCh:       make(chan struct{}),
 		gameState:    game.NewState(),
 		commands:     DefaultRegistry(),
+		startVotes:   make(map[string]bool),
 	}
 	m.rooms[normalized] = room
 
@@ -214,6 +215,7 @@ type Room struct {
 	wg           sync.WaitGroup
 	gameState    *game.State
 	commands     *CommandRegistry
+	startVotes   map[string]bool
 }
 
 func (r *Room) Summary() RoomSummary {
@@ -436,6 +438,7 @@ func (r *Room) Leave(session *Session) {
 				r.OwnerID = ""
 				r.promoteSuccessorLocked()
 			}
+			delete(r.startVotes, session.playerID)
 			if r.PlayerCountLocked() == 0 {
 				r.InGame = false
 			}
@@ -486,6 +489,22 @@ func (r *Room) SetInGame(value bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.InGame = value
+	if value {
+		r.startVotes = make(map[string]bool)
+	}
+}
+
+func (r *Room) AddStartVote(playerID string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.startVotes[playerID] = true
+	return len(r.startVotes)
+}
+
+func (r *Room) ClearStartVotes() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.startVotes = make(map[string]bool)
 }
 
 func (r *Room) IsInGame() bool {

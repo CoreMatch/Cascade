@@ -147,9 +147,23 @@ func DefaultRegistry() *CommandRegistry {
 			ctx.Reply("游戏已经在运行中。")
 			return
 		}
-		// Trigger start game logic
+
 		if s, ok := ctx.Sender.(*Session); ok {
-			_ = s.handleStartGame(protocol.Packet{})
+			votes := ctx.Room.AddStartVote(s.playerID)
+			totalHumans := 0
+			for _, p := range ctx.Room.SnapshotPlayers() {
+				if p != nil {
+					totalHumans++
+				}
+			}
+
+			required := (totalHumans + 1) / 2
+			if votes >= required {
+				ctx.Room.broadcastSystem(fmt.Sprintf("投票通过 (%d/%d)，游戏立即开始！", votes, required))
+				_ = s.handleStartGame(protocol.Packet{})
+			} else {
+				ctx.Room.broadcastSystem(fmt.Sprintf("%s 投票开始游戏 (%d/%d)", s.Name(), votes, required))
+			}
 		}
 	})
 
