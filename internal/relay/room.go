@@ -160,6 +160,7 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		CreatedAt:    time.Now(),
 		players:      make([]*Session, maxPlayers),
 		adminIDs:     make(map[string]bool),
+		mutedIDs:     make(map[string]bool),
 		AISlot:       -1,
 		gameCommands: make(chan CommandRequest, 128),
 		stopCh:       make(chan struct{}),
@@ -270,10 +271,12 @@ type Room struct {
 
 	mu           sync.RWMutex
 	InGame       bool
+	paused       bool
 	currentStep  int32
 	OwnerID      string
 	players      []*Session
 	adminIDs     map[string]bool
+	mutedIDs     map[string]bool
 	AISlot       int
 	gameCommands chan CommandRequest
 	stopCh       chan struct{}
@@ -340,6 +343,12 @@ func (r *Room) PushCommand(cmd CommandRequest) {
 }
 
 func (r *Room) processTick() {
+	// When paused, still drain commands but don't process or advance
+	if r.IsPaused() {
+		r.drainCommands()
+		return
+	}
+
 	commands := r.drainCommands()
 
 	// Collect raw command bytes for relay (no server-side parsing)
@@ -510,6 +519,7 @@ func (r *Room) SetInGame(value bool) {
 	r.InGame = value
 	if value {
 		r.currentStep = 0
+		r.paused = false
 		r.startVotes = make(map[string]bool)
 	}
 }
@@ -633,9 +643,74 @@ func (r *Room) Kick(actor, target *Session) error {
 		return fmt.Errorf("only owner can kick another admin")
 	}
 
-	_ = target.systemMessage("你已被移出房间。")
+	reason := fmt.Sprintf("你已被 %s 移出房间。", actor.Name())
+	_ = target.Send(protocol.EncodeKick(reason))
 	target.close()
 	return nil
+}
+
+// Mute adds a player to the mute list.
+func (r *Room) Mute(actor, target *Session) error {
+	if actor == nil || target == nil {
+		return fmt.Errorf("actor or target is nil")
+	}
+	r.mu.RLock()
+	canModerate := r.adminIDs[actor.playerID]
+	actorIsOwner := actor.playerID == r.OwnerID
+	targetIsOwner := target.playerID == r.OwnerID
+	r.mu.RUnlock()
+
+	if !canModerate {
+		return fmt.Errorf("only admins can mute players")
+	}
+	if targetIsOwner && !actorIsOwner {
+		return fmt.Errorf("only owner can mute current owner")
+	}
+
+	r.mu.Lock()
+	r.mutedIDs[target.playerID] = true
+	r.mu.Unlock()
+	return nil
+}
+
+// Unmute removes a player from the mute list.
+func (r *Room) Unmute(actor, target *Session) error {
+	if actor == nil || target == nil {
+		return fmt.Errorf("actor or target is nil")
+	}
+	r.mu.RLock()
+	canModerate := r.adminIDs[actor.playerID]
+	r.mu.RUnlock()
+
+	if !canModerate {
+		return fmt.Errorf("only admins can unmute players")
+	}
+
+	r.mu.Lock()
+	delete(r.mutedIDs, target.playerID)
+	r.mu.Unlock()
+	return nil
+}
+
+// IsMuted checks if a player is muted.
+func (r *Room) IsMuted(playerID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.mutedIDs[playerID]
+}
+
+// SetPaused sets the paused state of the room.
+func (r *Room) SetPaused(value bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.paused = value
+}
+
+// IsPaused returns whether the room is paused.
+func (r *Room) IsPaused() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.paused
 }
 
 func (r *Room) FindTarget(input string) (*Session, error) {
@@ -706,6 +781,14 @@ func (r *Room) broadcastSystem(message string) {
 }
 
 func (r *Room) handleChat(sender Identity, message string) {
+	// Check if the sender is muted (commands still work for muted players)
+	if s, ok := sender.(*Session); ok {
+		if r.IsMuted(s.playerID) && !strings.HasPrefix(message, r.commands.prefix) {
+			_ = s.systemMessage("你已被禁言，无法发送消息。")
+			return
+		}
+	}
+
 	// Broadcast the chat message to everyone (including the sender)
 	packet := buildChatPacket(sender.Name(), message, 0)
 	r.broadcast(packet)

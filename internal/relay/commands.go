@@ -137,11 +137,16 @@ func DefaultRegistry() *CommandRegistry {
 		fog := r.FogOfWar
 		nuke := r.DisableNuke
 		shared := r.SharedControl
+		paused := r.paused
 		r.mu.RUnlock()
 
 		status := "等待中"
 		if detail.InGame {
-			status = "游戏中"
+			if paused {
+				status = "游戏中 (已暂停)"
+			} else {
+				status = "游戏中"
+			}
 		}
 		fogText := fogTypeText(fog)
 		info := fmt.Sprintf("房间: %s\n地图: %s\n人数: %d/%d\n状态: %s\n资金: %d\n收入: %.1f\n最大单位: %d\n迷雾: %s\n核弹: %s\n共享控制: %s",
@@ -618,6 +623,72 @@ func DefaultRegistry() *CommandRegistry {
 				ctx.Reply("用法: /admin <add|remove> <玩家>")
 			}
 		}
+	})
+
+	reg.Register("mute", "禁言玩家 (用法: /mute <玩家名或#槽位>)", true, func(ctx *CommandContext) {
+		if len(ctx.Args) == 0 {
+			ctx.Reply("用法: /mute <玩家名或#槽位>")
+			return
+		}
+		target, err := ctx.Room.FindTarget(ctx.Args[0])
+		if err != nil {
+			ctx.Reply("错误: " + err.Error())
+			return
+		}
+		if s, ok := ctx.Sender.(*Session); ok {
+			err = ctx.Room.Mute(s, target)
+			if err != nil {
+				ctx.Reply("禁言失败: " + err.Error())
+			} else {
+				ctx.Room.broadcastSystem(fmt.Sprintf("%s 已被禁言。", target.Name()))
+			}
+		}
+	})
+
+	reg.Register("unmute", "解除禁言 (用法: /unmute <玩家名或#槽位>)", true, func(ctx *CommandContext) {
+		if len(ctx.Args) == 0 {
+			ctx.Reply("用法: /unmute <玩家名或#槽位>")
+			return
+		}
+		target, err := ctx.Room.FindTarget(ctx.Args[0])
+		if err != nil {
+			ctx.Reply("错误: " + err.Error())
+			return
+		}
+		if s, ok := ctx.Sender.(*Session); ok {
+			err = ctx.Room.Unmute(s, target)
+			if err != nil {
+				ctx.Reply("解除禁言失败: " + err.Error())
+			} else {
+				ctx.Room.broadcastSystem(fmt.Sprintf("%s 已解除禁言。", target.Name()))
+			}
+		}
+	})
+
+	reg.Register("pause", "暂停游戏 (管理员)", true, func(ctx *CommandContext) {
+		if !ctx.Room.IsInGame() {
+			ctx.Reply("当前不在游戏中。")
+			return
+		}
+		if ctx.Room.IsPaused() {
+			ctx.Reply("游戏已经暂停。")
+			return
+		}
+		ctx.Room.SetPaused(true)
+		ctx.Room.broadcastSystem(fmt.Sprintf("游戏已由 %s 暂停。", ctx.Sender.Name()))
+	})
+
+	reg.Register("unpause", "恢复游戏 (管理员)", true, func(ctx *CommandContext) {
+		if !ctx.Room.IsInGame() {
+			ctx.Reply("当前不在游戏中。")
+			return
+		}
+		if !ctx.Room.IsPaused() {
+			ctx.Reply("游戏未暂停。")
+			return
+		}
+		ctx.Room.SetPaused(false)
+		ctx.Room.broadcastSystem(fmt.Sprintf("游戏已由 %s 恢复。", ctx.Sender.Name()))
 	})
 
 	reg.Register("version", "显示服务器版本信息", false, func(ctx *CommandContext) {
