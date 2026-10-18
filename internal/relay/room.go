@@ -161,6 +161,7 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		players:      make([]*Session, maxPlayers),
 		adminIDs:     make(map[string]bool),
 		mutedIDs:     make(map[string]bool),
+		disconnectedPlayers: make(map[string]*DisconnectedPlayer),
 		AISlot:       -1,
 		gameCommands: make(chan CommandRequest, 128),
 		stopCh:       make(chan struct{}),
@@ -277,6 +278,9 @@ type Room struct {
 	players      []*Session
 	adminIDs     map[string]bool
 	mutedIDs     map[string]bool
+	disconnectedPlayers map[string]*DisconnectedPlayer
+	lastSave     []byte
+	syncing      bool
 	AISlot       int
 	gameCommands chan CommandRequest
 	stopCh       chan struct{}
@@ -284,6 +288,15 @@ type Room struct {
 	gameState    *game.State
 	commands     *CommandRegistry
 	startVotes   map[string]bool
+}
+
+// DisconnectedPlayer tracks a player who disconnected during a game.
+type DisconnectedPlayer struct {
+	PlayerID string
+	Name     string
+	Slot     int
+	Team     int32
+	LeftAt   time.Time
 }
 
 func (r *Room) Summary() RoomSummary {
@@ -460,6 +473,17 @@ func (r *Room) Leave(session *Session) {
 
 	for idx, existing := range r.players {
 		if existing == session {
+			// Track disconnected player during game for potential reconnection
+			if r.InGame && session.playerID != "" {
+				r.disconnectedPlayers[session.playerID] = &DisconnectedPlayer{
+					PlayerID: session.playerID,
+					Name:     session.name,
+					Slot:     idx,
+					Team:     session.team,
+					LeftAt:   time.Now(),
+				}
+			}
+
 			r.players[idx] = nil
 			delete(r.adminIDs, session.playerID)
 			if r.OwnerID == session.playerID {
@@ -474,6 +498,30 @@ func (r *Room) Leave(session *Session) {
 			return
 		}
 	}
+}
+
+// RestoreSlot restores a session to a specific slot (used for reconnection).
+func (r *Room) RestoreSlot(session *Session, slot int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if slot < 0 || slot >= len(r.players) {
+		return fmt.Errorf("invalid slot: %d", slot)
+	}
+
+	// If slot is occupied, try to find an empty slot instead
+	if r.players[slot] != nil {
+		emptySlot := r.firstEmptySlotLocked()
+		if emptySlot == -1 {
+			return fmt.Errorf("room is full, cannot restore slot")
+		}
+		slot = emptySlot
+	}
+
+	r.players[slot] = session
+	session.setRoom(r, slot)
+	r.syncAutoAILocked()
+	return nil
 }
 
 func (r *Room) PlayerCount() int {
@@ -711,6 +759,109 @@ func (r *Room) IsPaused() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.paused
+}
+
+// FindDisconnected checks if a playerID matches a recently disconnected player.
+func (r *Room) FindDisconnected(playerID string) *DisconnectedPlayer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	dp, ok := r.disconnectedPlayers[playerID]
+	if !ok {
+		return nil
+	}
+	// Expire after 5 minutes
+	if time.Since(dp.LeftAt) > 5*time.Minute {
+		delete(r.disconnectedPlayers, playerID)
+		return nil
+	}
+	return dp
+}
+
+// ClearDisconnected removes a player from the disconnected tracking.
+func (r *Room) ClearDisconnected(playerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.disconnectedPlayers, playerID)
+}
+
+// CleanupDisconnectedStale removes stale disconnected player entries.
+func (r *Room) CleanupDisconnectedStale() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, dp := range r.disconnectedPlayers {
+		if time.Since(dp.LeftAt) > 5*time.Minute {
+			delete(r.disconnectedPlayers, id)
+		}
+	}
+}
+
+// SetLastSave stores the last known game save data.
+func (r *Room) SetLastSave(data []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lastSave = data
+}
+
+// GetLastSave returns the last known game save data.
+func (r *Room) GetLastSave() []byte {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.lastSave
+}
+
+// IsSyncing returns whether a sync operation is in progress.
+func (r *Room) IsSyncing() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.syncing
+}
+
+// SetSyncing sets the syncing state.
+func (r *Room) SetSyncing(value bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.syncing = value
+}
+
+// TriggerSync initiates a save sync by requesting saves from connected clients.
+func (r *Room) TriggerSync(server *Server) {
+	if r.IsSyncing() {
+		return
+	}
+	r.SetSyncing(true)
+	r.SetPaused(true)
+
+	// Request save from all connected clients
+	pullSave := protocol.EncodeSyncPullSave(r.currentStep, nil)
+	r.broadcast(pullSave)
+
+	// Start a goroutine to wait for the save with timeout
+	go func() {
+		defer r.SetSyncing(false)
+		deadline := time.After(5 * time.Second)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-deadline:
+				// Timeout - resume without sync
+				r.SetPaused(false)
+				server.logger.Printf("sync timeout for room %s", r.Code)
+				return
+			case <-ticker.C:
+				save := r.GetLastSave()
+				if save != nil && len(save) > 20 {
+					// Got a valid save, distribute it to all clients
+					sendSave := protocol.EncodeSyncSendSave(r.currentStep, save)
+					r.broadcast(sendSave)
+					r.SetPaused(false)
+					server.logger.Printf("sync completed for room %s (%d bytes)", r.Code, len(save))
+					return
+				}
+			}
+		}
+	}()
 }
 
 func (r *Room) FindTarget(input string) (*Session, error) {

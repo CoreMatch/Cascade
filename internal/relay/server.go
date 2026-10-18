@@ -211,11 +211,19 @@ func (s *Session) handlePacket(packet protocol.Packet) error {
 		// Acknowledge, no-op for now
 		return nil
 	case protocol.TypeSync:
-		// Forward to room for relay
 		room := s.Room()
-		if room != nil {
-			room.broadcast(packet)
+		if room == nil {
+			return nil
 		}
+		// Try to parse save data from the sync response
+		_, saveData, err := protocol.DecodeSyncSave(packet.Body)
+		if err == nil && len(saveData) > 20 {
+			// Store the save data for reconnection sync
+			room.SetLastSave(saveData)
+			s.server.logger.Printf("received save data from %s (%d bytes)", s.name, len(saveData))
+		}
+		// Also forward to other clients for relay
+		room.broadcast(packet)
 		return nil
 	case protocol.TypeReady:
 		// Acknowledge, no-op for now
@@ -398,6 +406,52 @@ func (s *Session) joinRoom(code string) error {
 
 	s.server.logger.Printf("player %s joined room %s (new: %v)", s.name, room.Code, isNew)
 
+	// Check for reconnection
+	if dp := room.FindDisconnected(s.playerID); dp != nil {
+		// This is a reconnection - restore the player's slot
+		s.server.logger.Printf("player %s reconnecting to room %s (was in slot %d)", s.name, room.Code, dp.Slot)
+
+		// Try to restore the original slot
+		if err := room.RestoreSlot(s, dp.Slot); err != nil {
+			// If slot is taken, just join normally
+			s.server.logger.Printf("could not restore slot %d for %s: %v, joining normally", dp.Slot, s.name, err)
+		} else {
+			// Restore team
+			s.team = dp.Team
+		}
+
+		room.ClearDisconnected(s.playerID)
+
+		// Send initial room state
+		if err := s.sendServerInfo(room); err != nil {
+			return err
+		}
+
+		if err := room.broadcastTeamList(); err != nil {
+			return err
+		}
+
+		// If game is in progress, send start game packet and trigger sync
+		if room.IsInGame() {
+			_ = s.systemMessage("正在重新连接到游戏...")
+			room.broadcastSystem(fmt.Sprintf("%s 已重连。", s.name))
+
+			// Send start game packet so client enters game state
+			startGamePacket := protocol.EncodeStartGame(room.MapName, nil, false)
+			_ = s.Send(startGamePacket)
+
+			// Trigger sync to get the reconnecting player up to date
+			go room.TriggerSync(s.server)
+		} else {
+			_ = s.systemMessage(fmt.Sprintf("欢迎回到房间 %s!", room.Code))
+			room.broadcastSystem(fmt.Sprintf("%s 已重连。", s.name))
+		}
+
+		s.state.Store(int32(stateActive))
+		return nil
+	}
+
+	// Normal join flow
 	// Send initial room state
 	if err := s.sendServerInfo(room); err != nil {
 		return err

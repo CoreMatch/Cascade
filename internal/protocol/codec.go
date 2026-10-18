@@ -623,6 +623,106 @@ func EncodeReturnToBattleroom() Packet {
 	return w.Packet(TypeReturnToBattleRoom)
 }
 
+// EncodeSyncPullSave generates a SYNC (type 35) packet requesting clients to upload their save.
+func EncodeSyncPullSave(step int32, defaultSave []byte) Packet {
+	w := NewWriter()
+	w.Byte(0)
+	w.Int32(step)
+	w.Int32(step / 10)
+	w.Float32(1.0)
+	w.Float32(1.0)
+	w.Bool(true)  // isPullSave = true (request)
+	w.Bool(false)
+
+	// Write "gameSave" block with default save data
+	w.StartBlock("gameSave", false)
+	if defaultSave != nil {
+		w.blockBuf.Raw(defaultSave)
+	}
+	w.EndBlock()
+
+	return w.Packet(TypeSync)
+}
+
+// EncodeSyncSendSave generates a SYNC (type 35) packet distributing a save to all clients.
+func EncodeSyncSendSave(step int32, saveData []byte) Packet {
+	w := NewWriter()
+	w.Byte(0)
+	w.Int32(step)
+	w.Int32(step / 10)
+	w.Float32(1.0)
+	w.Float32(1.0)
+	w.Bool(false) // isPullSave = false (distribute)
+	w.Bool(false)
+
+	// Write "gameSave" block with actual save data
+	w.StartBlock("gameSave", false)
+	if saveData != nil {
+		w.blockBuf.Raw(saveData)
+	}
+	w.EndBlock()
+
+	return w.Packet(TypeSync)
+}
+
+// DecodeSyncSave parses a SYNC (type 35) response from a client to extract the save data.
+func DecodeSyncSave(body []byte) (step int32, saveData []byte, err error) {
+	r := NewReader(body)
+
+	// byte (discard)
+	if _, err = r.Byte(); err != nil {
+		return 0, nil, err
+	}
+	// frame
+	if step, err = r.Int32(); err != nil {
+		return 0, nil, err
+	}
+	// time (discard)
+	if _, err = r.Int32(); err != nil {
+		return 0, nil, err
+	}
+	// float (discard)
+	if _, err = r.Float32(); err != nil {
+		return 0, nil, err
+	}
+	// float (discard)
+	if _, err = r.Float32(); err != nil {
+		return 0, nil, err
+	}
+	// bool isPullSave (discard)
+	if _, err = r.Bool(); err != nil {
+		return 0, nil, err
+	}
+	// bool (discard)
+	if _, err = r.Bool(); err != nil {
+		return 0, nil, err
+	}
+
+	// Read "gameSave" block
+	blockName, err := r.String()
+	if err != nil {
+		return step, nil, nil // No block, return step only
+	}
+	blockLen, err := r.Int32()
+	if err != nil {
+		return step, nil, nil
+	}
+	if r.off+int(blockLen) > len(r.data) {
+		return step, nil, nil
+	}
+	saveData = r.data[r.off : r.off+int(blockLen)]
+
+	// Try to decompress if it's gzip
+	if blockName == "gameSave" && len(saveData) > 2 {
+		decompressed, derr := gunzipBytes(saveData)
+		if derr == nil {
+			saveData = decompressed
+		}
+	}
+
+	return step, saveData, nil
+}
+
 // EncodeDisconnect generates the DISCONNECT (type 111) packet.
 func EncodeDisconnect() Packet {
 	w := NewWriter()
