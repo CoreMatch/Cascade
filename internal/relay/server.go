@@ -1,28 +1,28 @@
 package relay
 
 import (
-        "context"
-        "errors"
-        "fmt"
-        "log"
-        "net"
-        "os"
-        "path/filepath"
-        "strings"
-        "sync"
-        "sync/atomic"
-        "time"
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"rwgin/internal/config"
 	"rwgin/internal/protocol"
 )
 
 type Server struct {
-	cfg          config.Config
-	logger       *log.Logger
-	rooms        *Manager
-	listener     net.Listener
-	connCount    atomic.Int32
+	cfg       config.Config
+	logger    *log.Logger
+	rooms     *Manager
+	listener  net.Listener
+	connCount atomic.Int32
 }
 
 func NewServer(cfg config.Config, logger *log.Logger) *Server {
@@ -124,8 +124,8 @@ type Session struct {
 	checkList    []int64 // 15 checksum values from client
 
 	// Chat rate limiting
-	chatMessages    []time.Time
-	chatMu          sync.Mutex
+	chatMessages []time.Time
+	chatMu       sync.Mutex
 }
 
 var sessionCounter atomic.Uint64
@@ -540,6 +540,7 @@ func (s *Session) joinRoom(code string) error {
 
 	// Send welcome message
 	_ = s.systemMessage(fmt.Sprintf("欢迎 %s 加入房间 %s!", s.name, room.Code))
+	_ = s.systemMessage(room.commands.PlayerHelpText())
 	room.broadcastSystem(fmt.Sprintf("%s 加入了房间。", s.name))
 
 	s.state.Store(int32(stateActive))

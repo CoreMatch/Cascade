@@ -97,6 +97,18 @@ func (r *CommandRegistry) Handle(room *Room, sender Identity, message string) bo
 	return true
 }
 
+// PlayerHelpText returns a help string listing only commands available to non-admin players.
+func (r *CommandRegistry) PlayerHelpText() string {
+	var lines []string
+	for name, entry := range r.commands {
+		if entry.adminOnly {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("/%s - %s", name, entry.description))
+	}
+	return "可用指令:\n" + strings.Join(lines, "\n")
+}
+
 // DefaultRegistry returns a registry with all built-in commands.
 func DefaultRegistry() *CommandRegistry {
 	reg := NewCommandRegistry("/")
@@ -158,7 +170,7 @@ func DefaultRegistry() *CommandRegistry {
 
 	reg.Register("maps", "列出可用地图", false, func(ctx *CommandContext) {
 		maps := ctx.Room.commands // access through room to get manager
-		_ = maps                   // we need the manager
+		_ = maps                  // we need the manager
 		// Get maps from the room's manager via the session
 		if s, ok := ctx.Sender.(*Session); ok {
 			mapsList := s.server.rooms.ListMaps()
@@ -924,4 +936,3 @@ func parseBool(s string) (bool, error) {
 		return false, fmt.Errorf("invalid boolean: %s", s)
 	}
 }
-
