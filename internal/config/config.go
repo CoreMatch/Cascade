@@ -32,6 +32,9 @@ type Config struct {
 	ModsDir              string
 	HeartbeatIntervalSec int
 	RegisterTimeoutSec   int
+	ReadTimeoutSec       int
+	MaxConnections       int
+	ChatRateLimit        int // max messages per second per player
 }
 
 // fileConfig mirrors the YAML structure, with a Version field for migration.
@@ -52,6 +55,9 @@ type fileConfig struct {
 	ModsDir              string  `yaml:"mods_dir"`
 	HeartbeatIntervalSec int     `yaml:"heartbeat_interval_sec"`
 	RegisterTimeoutSec   int     `yaml:"register_timeout_sec"`
+	ReadTimeoutSec       int     `yaml:"read_timeout_sec"`
+	MaxConnections       int     `yaml:"max_connections"`
+	ChatRateLimit        int     `yaml:"chat_rate_limit"`
 }
 
 // Load reads config.yaml (creating/migrating as needed), then overlays env vars.
@@ -119,6 +125,9 @@ func defaultFileConfig() fileConfig {
 		ModsDir:              "assets/mods",
 		HeartbeatIntervalSec: 2,
 		RegisterTimeoutSec:   5,
+		ReadTimeoutSec:       90,
+		MaxConnections:       200,
+		ChatRateLimit:        5,
 	}
 }
 
@@ -185,6 +194,9 @@ func fileConfigToConfig(fc fileConfig) Config {
 		ModsDir:              fc.ModsDir,
 		HeartbeatIntervalSec: fc.HeartbeatIntervalSec,
 		RegisterTimeoutSec:   fc.RegisterTimeoutSec,
+		ReadTimeoutSec:       fc.ReadTimeoutSec,
+		MaxConnections:       fc.MaxConnections,
+		ChatRateLimit:        fc.ChatRateLimit,
 	}
 	// Apply defaults for zero-valued string fields
 	if cfg.GameListenAddr == "" {
@@ -232,6 +244,15 @@ func fileConfigToConfig(fc fileConfig) Config {
 	}
 	if cfg.RegisterTimeoutSec == 0 {
 		cfg.RegisterTimeoutSec = d.RegisterTimeoutSec
+	}
+	if cfg.ReadTimeoutSec == 0 {
+		cfg.ReadTimeoutSec = d.ReadTimeoutSec
+	}
+	if cfg.MaxConnections == 0 {
+		cfg.MaxConnections = d.MaxConnections
+	}
+	if cfg.ChatRateLimit == 0 {
+		cfg.ChatRateLimit = d.ChatRateLimit
 	}
 	return cfg
 }
@@ -283,6 +304,15 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnvInt("RWGIN_REGISTER_TIMEOUT_SEC"); ok {
 		cfg.RegisterTimeoutSec = v
+	}
+	if v, ok := lookupEnvInt("RWGIN_READ_TIMEOUT_SEC"); ok {
+		cfg.ReadTimeoutSec = v
+	}
+	if v, ok := lookupEnvInt("RWGIN_MAX_CONNECTIONS"); ok {
+		cfg.MaxConnections = v
+	}
+	if v, ok := lookupEnvInt("RWGIN_CHAT_RATE_LIMIT"); ok {
+		cfg.ChatRateLimit = v
 	}
 }
 

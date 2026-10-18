@@ -397,8 +397,10 @@ func (r *Room) PushCommand(cmd CommandRequest) {
 	select {
 	case r.gameCommands <- cmd:
 	default:
-		// Dropping commands if the channel is full.
-		// Consider logging this event if it's important.
+		// Log when command queue is full
+		if r.server != nil && r.server.logger != nil {
+			r.server.logger.Printf("command queue full for room %s, dropping command", r.Code)
+		}
 	}
 }
 

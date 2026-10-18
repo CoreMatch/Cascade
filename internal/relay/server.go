@@ -18,10 +18,11 @@ import (
 )
 
 type Server struct {
-	cfg      config.Config
-	logger   *log.Logger
-	rooms    *Manager
-	listener net.Listener
+	cfg          config.Config
+	logger       *log.Logger
+	rooms        *Manager
+	listener     net.Listener
+	connCount    atomic.Int32
 }
 
 func NewServer(cfg config.Config, logger *log.Logger) *Server {
@@ -69,8 +70,19 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			return err
 		}
 
+		// Check connection limit
+		if s.cfg.MaxConnections > 0 && s.connCount.Load() >= int32(s.cfg.MaxConnections) {
+			s.logger.Printf("connection limit reached (%d), rejecting %s", s.cfg.MaxConnections, conn.RemoteAddr())
+			_ = conn.Close()
+			continue
+		}
+
+		s.connCount.Add(1)
 		session := newSession(s, conn)
-		go session.run(ctx)
+		go func() {
+			session.run(ctx)
+			s.connCount.Add(-1)
+		}()
 	}
 }
 
@@ -110,6 +122,10 @@ type Session struct {
 	lastSyncTick int32
 	checkSumSent bool
 	checkList    []int64 // 15 checksum values from client
+
+	// Chat rate limiting
+	chatMessages    []time.Time
+	chatMu          sync.Mutex
 }
 
 var sessionCounter atomic.Uint64
@@ -144,7 +160,7 @@ func (s *Session) run(ctx context.Context) {
 		default:
 		}
 
-		_ = s.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		_ = s.conn.SetReadDeadline(time.Now().Add(time.Duration(s.server.cfg.ReadTimeoutSec) * time.Second))
 		packet, err := protocol.ReadPacket(s.conn)
 		if err != nil {
 			return
@@ -173,7 +189,7 @@ func (s *Session) writeLoop() {
 }
 
 func (s *Session) heartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(time.Duration(s.server.cfg.HeartbeatIntervalSec) * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -351,9 +367,46 @@ func (s *Session) handleChat(body []byte) error {
 	if strings.TrimSpace(message) == "" {
 		return nil
 	}
-    
+
+	// Check chat rate limit
+	if !s.checkChatRateLimit() {
+		_ = s.systemMessage("消息发送过快，请稍后再试。")
+		return nil
+	}
+
 	room.handleChat(s, message)
 	return nil
+}
+
+// checkChatRateLimit checks if the player is sending messages too fast.
+func (s *Session) checkChatRateLimit() bool {
+	rateLimit := s.server.cfg.ChatRateLimit
+	if rateLimit <= 0 {
+		return true // No limit
+	}
+
+	s.chatMu.Lock()
+	defer s.chatMu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-time.Second)
+
+	// Remove old messages
+	valid := s.chatMessages[:0]
+	for _, t := range s.chatMessages {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	s.chatMessages = valid
+
+	// Check if under limit
+	if len(s.chatMessages) >= rateLimit {
+		return false
+	}
+
+	s.chatMessages = append(s.chatMessages, now)
+	return true
 }
 
 func (s *Session) handleStartGame(packet protocol.Packet) error {
