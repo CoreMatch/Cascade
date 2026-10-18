@@ -852,6 +852,78 @@ func DefaultRegistry() *CommandRegistry {
 		ctx.Room.broadcastSystem(fmt.Sprintf("玩家 %s 已被解封。", playerID))
 	})
 
+	// --- HA Authentication commands ---
+
+	reg.Register("login", "登录 HA 账号 (用法: /login <邮箱/用户名> <密码>)", false, func(ctx *CommandContext) {
+		if len(ctx.Args) < 2 {
+			ctx.Reply("用法: /login <邮箱/用户名> <密码>")
+			return
+		}
+
+		s, ok := ctx.Sender.(*Session)
+		if !ok {
+			return
+		}
+
+		if s.server.auth == nil {
+			ctx.Reply("认证服务未配置。")
+			return
+		}
+
+		if s.authenticated {
+			ctx.Reply("你已经认证过了。")
+			return
+		}
+
+		identifier := ctx.Args[0]
+		password := ctx.Args[1]
+
+		// Verify credentials against HA core API
+		user, err := s.server.auth.VerifyCredentials(identifier, password)
+		if err != nil {
+			ctx.Reply("认证失败: 服务不可用。")
+			s.server.logger.Printf("HA login error for %s: %v", s.name, err)
+			return
+		}
+		if user == nil {
+			ctx.Reply("认证失败: 用户名或密码错误。")
+			return
+		}
+
+		// Store binding: game_uuid <-> ha_user_uuid
+		if err := s.server.db.UpsertBinding(s.playerID, user.UUID, s.name, true); err != nil {
+			ctx.Reply("绑定失败: " + err.Error())
+			return
+		}
+
+		s.haUserUUID = user.UUID
+		s.authenticated = true
+
+		ctx.Reply(fmt.Sprintf("认证成功！欢迎, %s", user.Username))
+		ctx.Room.broadcastSystem(fmt.Sprintf("%s 已通过 HA 认证", s.name))
+		s.server.logger.Printf("HA: %s authenticated as %s (uuid=%s)", s.name, user.Username, user.UUID)
+	})
+
+	reg.Register("whoami", "显示当前认证状态", false, func(ctx *CommandContext) {
+		s, ok := ctx.Sender.(*Session)
+		if !ok {
+			return
+		}
+
+		if s.server.auth == nil {
+			ctx.Reply("认证服务未配置。")
+			return
+		}
+
+		if s.authenticated {
+			ctx.Reply("状态: 已认证")
+			ctx.Reply(fmt.Sprintf("HA UUID: %s", s.haUserUUID))
+		} else {
+			ctx.Reply("状态: 未认证 (游客)")
+			ctx.Reply("使用 /login <邮箱> <密码> 登录")
+		}
+	})
+
 	reg.Register("version", "显示服务器版本信息", false, func(ctx *CommandContext) {
 		ctx.Reply("MCAGS-RW Server v0.1.0")
 	})

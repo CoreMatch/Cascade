@@ -31,6 +31,9 @@ type Config struct {
 	MapsDir              string
 	ModsDir              string
 	DBPath               string
+	HRPAuthURL           string
+	HRPAuthClientID      string // OAuth2 client_id
+	HRPAuthClientSecret  string // OAuth2 client_secret
 	HeartbeatIntervalSec int
 	RegisterTimeoutSec   int
 	ReadTimeoutSec       int
@@ -55,6 +58,9 @@ type fileConfig struct {
 	MapsDir              string  `yaml:"maps_dir"`
 	ModsDir              string  `yaml:"mods_dir"`
 	DBPath               string  `yaml:"db_path"`
+	HRPAuthURL           string  `yaml:"hrpauth_url"`
+	HRPAuthClientID      string  `yaml:"hrpauth_client_id"`
+	HRPAuthClientSecret  string  `yaml:"hrpauth_client_secret"`
 	HeartbeatIntervalSec int     `yaml:"heartbeat_interval_sec"`
 	RegisterTimeoutSec   int     `yaml:"register_timeout_sec"`
 	ReadTimeoutSec       int     `yaml:"read_timeout_sec"`
@@ -196,6 +202,9 @@ func fileConfigToConfig(fc fileConfig) Config {
 		MapsDir:              fc.MapsDir,
 		ModsDir:              fc.ModsDir,
 		DBPath:               fc.DBPath,
+		HRPAuthURL:           fc.HRPAuthURL,
+		HRPAuthClientID:      fc.HRPAuthClientID,
+		HRPAuthClientSecret:  fc.HRPAuthClientSecret,
 		HeartbeatIntervalSec: fc.HeartbeatIntervalSec,
 		RegisterTimeoutSec:   fc.RegisterTimeoutSec,
 		ReadTimeoutSec:       fc.ReadTimeoutSec,
@@ -308,6 +317,15 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnv("RWGIN_DB_PATH"); ok {
 		cfg.DBPath = v
+	}
+	if v, ok := lookupEnv("RWGIN_HRPAUTH_URL"); ok {
+		cfg.HRPAuthURL = v
+	}
+	if v, ok := lookupEnv("RWGIN_HRPAUTH_CLIENT_ID"); ok {
+		cfg.HRPAuthClientID = v
+	}
+	if v, ok := lookupEnv("RWGIN_HRPAUTH_CLIENT_SECRET"); ok {
+		cfg.HRPAuthClientSecret = v
 	}
 	if v, ok := lookupEnvInt("RWGIN_HEARTBEAT_SEC"); ok {
 		cfg.HeartbeatIntervalSec = v

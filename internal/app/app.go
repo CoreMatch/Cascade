@@ -27,7 +27,7 @@ func New(cfg config.Config, logger *log.Logger) *App {
 		logger.Fatalf("failed to open database: %v", err)
 	}
 
-	gameServer := relay.NewServer(cfg, logger)
+	gameServer := relay.NewServer(cfg, logger, db)
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPListenAddr,
 		Handler: api.Router(gameServer.Rooms()),

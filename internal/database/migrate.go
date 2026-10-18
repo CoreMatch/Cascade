@@ -6,7 +6,7 @@ import (
 	"log"
 )
 
-const currentSchemaVersion = 1
+const currentSchemaVersion = 2
 
 // Migration represents a single database migration step.
 type Migration struct {
@@ -30,6 +30,27 @@ var migrations = []Migration{
 					updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 				);
 				CREATE INDEX IF NOT EXISTS idx_players_player_id ON players(player_id);
+			`)
+			return err
+		},
+	},
+	{
+		Version:     2,
+		Description: "create player_bindings table for HA user mapping",
+		Up: func(tx *sql.Tx) error {
+			_, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS player_bindings (
+					id               INTEGER PRIMARY KEY AUTOINCREMENT,
+					game_uuid        TEXT    NOT NULL,
+					ha_user_uuid     TEXT    NOT NULL DEFAULT '',
+					player_name      TEXT    NOT NULL DEFAULT '',
+					is_authenticated INTEGER NOT NULL DEFAULT 0,
+					last_login       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					UNIQUE(game_uuid)
+				);
+				CREATE INDEX IF NOT EXISTS idx_bindings_game_uuid ON player_bindings(game_uuid);
+				CREATE INDEX IF NOT EXISTS idx_bindings_ha_user ON player_bindings(ha_user_uuid);
 			`)
 			return err
 		},

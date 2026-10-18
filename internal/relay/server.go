@@ -13,7 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"rwgin/internal/auth"
 	"rwgin/internal/config"
+	"rwgin/internal/database"
 	"rwgin/internal/protocol"
 )
 
@@ -21,14 +23,20 @@ type Server struct {
 	cfg       config.Config
 	logger    *log.Logger
 	rooms     *Manager
+	auth      *auth.Client
+	db        *database.DB
 	listener  net.Listener
 	connCount atomic.Int32
 }
 
-func NewServer(cfg config.Config, logger *log.Logger) *Server {
+func NewServer(cfg config.Config, logger *log.Logger, db *database.DB) *Server {
 	s := &Server{
 		cfg:    cfg,
 		logger: logger,
+		db:     db,
+	}
+	if cfg.HRPAuthURL != "" {
+		s.auth = auth.New(cfg.HRPAuthURL, cfg.HRPAuthClientID, cfg.HRPAuthClientSecret)
 	}
 	s.rooms = NewManager(cfg, s)
 	return s
@@ -114,6 +122,10 @@ type Session struct {
 
 	pendingRoomCode string
 	pendingUUID     string
+
+	// HA authentication state
+	haUserUUID    string // HA core user UUID (empty if not authenticated)
+	authenticated bool   // true if HA credentials verified via /login
 
 	roomMu sync.RWMutex
 	room   *Room
@@ -315,6 +327,9 @@ func (s *Session) handleRegister(body []byte) error {
 	}
 	s.name = firstNonBlank(name, s.preregister.PlayerName, "Player")
 	s.playerID = firstNonBlank(playerID, s.id)
+
+	// HA identity is only established via /login or /claim commands.
+	// Guests use pure local identity with no HA interaction.
 
 	if err := s.Send(protocol.EncodeRelayVersionInfo(int32(s.clientVersion))); err != nil {
 		return err
@@ -635,6 +650,20 @@ func (s *Session) systemMessage(message string) error {
 		return err
 	}
 	return s.Send(packet)
+}
+
+// restoreHABinding restores HA authentication state from the database (for reconnection).
+func (s *Session) restoreHABinding() {
+	binding, err := s.server.db.GetBindingByGameUUID(s.playerID)
+	if err != nil {
+		s.server.logger.Printf("HA: failed to lookup binding for %s: %v", s.playerID, err)
+		return
+	}
+	if binding != nil && binding.IsAuthenticated {
+		s.haUserUUID = binding.HAUserUUID
+		s.authenticated = true
+		s.server.logger.Printf("HA: restored binding for %s -> uuid=%s", s.playerID, binding.HAUserUUID)
+	}
 }
 
 func (s *Session) buildPreregisterPacket(handshakeID string) (protocol.Packet, error) {
