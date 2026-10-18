@@ -154,6 +154,9 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		Credits:      1000,
 		FogOfWar:     2,
 		Income:       m.cfg.DefaultIncome,
+		DisableNuke:  false,
+		SharedControl: false,
+		StartingUnits: 1,
 		CreatedAt:    time.Now(),
 		players:      make([]*Session, maxPlayers),
 		adminIDs:     make(map[string]bool),
@@ -256,11 +259,14 @@ type Room struct {
 	GameMap    *game.Map
 	ServerUUID string
 	MaxPlayers int
-	MaxUnits   int
-	Credits    int32
-	FogOfWar   int32
-	Income     float32
-	CreatedAt  time.Time
+	MaxUnits       int
+	Credits        int32
+	FogOfWar       int32
+	Income         float32
+	DisableNuke    bool
+	SharedControl  bool
+	StartingUnits  int32
+	CreatedAt      time.Time
 
 	mu           sync.RWMutex
 	InGame       bool
@@ -777,7 +783,7 @@ func (r *Room) buildTeamListPacket(player *Session) (protocol.Packet, error) {
 	w.Byte(5)
 	w.Int32(int32(r.MaxUnits))
 	w.Int32(int32(r.MaxUnits))
-	w.Int32(1)
+	w.Int32(r.StartingUnits)
 	w.Float32(r.Income)
 	w.Bool(true)
 	w.Bool(false)

@@ -92,6 +92,7 @@ type Session struct {
 	state         atomic.Int32
 	name          string
 	playerID      string
+	team          int32
 	clientVersion int
 	preregister   protocol.PreregisterInfo
 
@@ -397,10 +398,6 @@ func (s *Session) joinRoom(code string) error {
 
 	s.server.logger.Printf("player %s joined room %s (new: %v)", s.name, room.Code, isNew)
 
-        // This service keeps authoritative room state on the server side.
-        // Advertising the room owner as a relay host causes the client to
-        // pivot away from the dedicated connection and drop shortly after join.
-
 	// Send initial room state
 	if err := s.sendServerInfo(room); err != nil {
 		return err
@@ -409,6 +406,10 @@ func (s *Session) joinRoom(code string) error {
 	if err := room.broadcastTeamList(); err != nil {
 		return err
 	}
+
+	// Send welcome message
+	_ = s.systemMessage(fmt.Sprintf("欢迎 %s 加入房间 %s!", s.name, room.Code))
+	room.broadcastSystem(fmt.Sprintf("%s 加入了房间。", s.name))
 
 	s.state.Store(int32(stateActive))
 	return nil
@@ -439,10 +440,10 @@ func (s *Session) sendServerInfo(room *Room) error {
 		FogType:           room.FogOfWar,
 		IsAdmin:           room.IsAdmin(s),
 		MaxUnitsPerPlayer: int32(room.MaxUnits),
-		StartingUnits:     1,
+		StartingUnits:     room.StartingUnits,
 		Income:            room.Income,
-		DisableNuke:       false,
-		SharedControl:     false,
+		DisableNuke:       room.DisableNuke,
+		SharedControl:     room.SharedControl,
 		CustomUnits:       customUnits,
 	}
 
