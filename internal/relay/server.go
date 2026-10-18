@@ -25,11 +25,12 @@ type Server struct {
 }
 
 func NewServer(cfg config.Config, logger *log.Logger) *Server {
-	return &Server{
+	s := &Server{
 		cfg:    cfg,
 		logger: logger,
-		rooms:  NewManager(cfg),
 	}
+	s.rooms = NewManager(cfg, s)
+	return s
 }
 
 func (s *Server) Rooms() *Manager {
@@ -43,6 +44,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 	s.listener = ln
 	s.logger.Printf("game listener started on %s", s.cfg.GameListenAddr)
+
+	// Start room cleanup goroutine
+	s.rooms.StartCleanup(ctx)
 
 	go func() {
 		<-ctx.Done()
@@ -102,6 +106,10 @@ type Session struct {
 	roomMu sync.RWMutex
 	room   *Room
 	slot   int
+
+	lastSyncTick int32
+	checkSumSent bool
+	checkList    []int64 // 15 checksum values from client
 }
 
 var sessionCounter atomic.Uint64
@@ -208,7 +216,16 @@ func (s *Session) handlePacket(packet protocol.Packet) error {
 	case protocol.TypeGameCommand:
 		return s.handleGameCommand(packet)
 	case protocol.TypeSyncChecksum:
-		// Acknowledge, no-op for now
+		// Parse checksum response from client
+		room := s.Room()
+		if room == nil {
+			return nil
+		}
+		checksumData, err := protocol.DecodeSyncChecksumResponse(packet.Body)
+		if err == nil && len(checksumData) > 0 {
+			s.checkList = checksumData
+			s.checkSumSent = true
+		}
 		return nil
 	case protocol.TypeSync:
 		room := s.Room()

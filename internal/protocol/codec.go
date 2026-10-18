@@ -616,6 +616,86 @@ func EncodeSyncChecksum(step int32) Packet {
 	return w.Packet(TypeSyncChecksum)
 }
 
+// DecodeSyncChecksumResponse parses a SYNC_CHECKSUM_RESPONSE (type 31) packet from a client.
+func DecodeSyncChecksumResponse(body []byte) ([]int64, error) {
+	r := NewReader(body)
+
+	// byte prefix (discard)
+	if _, err := r.Byte(); err != nil {
+		return nil, err
+	}
+	// serverTick (discard)
+	if _, err := r.Int32(); err != nil {
+		return nil, err
+	}
+	// clientTick (discard)
+	if _, err := r.Int32(); err != nil {
+		return nil, err
+	}
+	// hasData boolean
+	hasData, err := r.Bool()
+	if err != nil {
+		return nil, err
+	}
+	if !hasData {
+		return nil, nil
+	}
+
+	// Two placeholder longs
+	if _, err := r.Int64(); err != nil {
+		return nil, err
+	}
+	if _, err := r.Int64(); err != nil {
+		return nil, err
+	}
+
+	// Read "checksum" block
+	blockName, err := r.String()
+	if err != nil {
+		return nil, err
+	}
+	blockLen, err := r.Int32()
+	if err != nil {
+		return nil, err
+	}
+	if r.off+int(blockLen) > len(r.data) {
+		return nil, nil
+	}
+	blockData := r.data[r.off : r.off+int(blockLen)]
+
+	if blockName != "checksum" {
+		return nil, nil
+	}
+
+	// Parse checksum block
+	br := NewReader(blockData)
+	// Placeholder int
+	if _, err := br.Int32(); err != nil {
+		return nil, err
+	}
+	// Count
+	count, err := br.Int32()
+	if err != nil {
+		return nil, err
+	}
+
+	checksums := make([]int64, count)
+	for i := int32(0); i < count; i++ {
+		// prefix (discard)
+		if _, err := br.Int64(); err != nil {
+			return nil, err
+		}
+		// checkData
+		checkData, err := br.Int64()
+		if err != nil {
+			return nil, err
+		}
+		checksums[i] = checkData
+	}
+
+	return checksums, nil
+}
+
 // EncodeReturnToBattleroom generates the RETURN_TO_BATTLEROOM (type 122) packet.
 func EncodeReturnToBattleroom() Packet {
 	w := NewWriter()

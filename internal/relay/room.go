@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -47,17 +48,19 @@ type RoomDetail struct {
 
 type Manager struct {
 	cfg           config.Config
+	server        *Server
 	mu            sync.RWMutex
 	rooms         map[string]*Room
 	availableMaps []string
 	mods          *mod.Registry
 }
 
-func NewManager(cfg config.Config) *Manager {
+func NewManager(cfg config.Config, server *Server) *Manager {
 	m := &Manager{
-		cfg:  cfg,
-		rooms: make(map[string]*Room),
-		mods:  mod.NewRegistry(),
+		cfg:    cfg,
+		server: server,
+		rooms:  make(map[string]*Room),
+		mods:   mod.NewRegistry(),
 	}
 	m.scanMaps()
 	m.loadMods()
@@ -149,6 +152,7 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		MapName:      mapName,
 		GameMap:      gameMap,
 		ServerUUID:   defaultIfBlank(uuid, randomHex(16)),
+		server:       m.server,
 		MaxPlayers:   maxPlayers,
 		MaxUnits:     m.cfg.DefaultMaxUnits,
 		Credits:      1000,
@@ -158,6 +162,7 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		SharedControl: false,
 		StartingUnits: 1,
 		CreatedAt:    time.Now(),
+		LastActivity: time.Now(),
 		players:      make([]*Session, maxPlayers),
 		adminIDs:     make(map[string]bool),
 		mutedIDs:     make(map[string]bool),
@@ -237,6 +242,36 @@ func (m *Manager) nextCode() string {
 	}
 }
 
+// StartCleanup starts a goroutine that periodically cleans up empty rooms.
+func (m *Manager) StartCleanup(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.cleanupStaleRooms()
+			}
+		}
+	}()
+}
+
+// cleanupStaleRooms removes rooms that have been empty for more than 5 minutes.
+func (m *Manager) cleanupStaleRooms() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	for code, room := range m.rooms {
+		if room.PlayerCount() == 0 && now.Sub(room.LastActivity) > 5*time.Minute {
+			room.Stop()
+			delete(m.rooms, code)
+		}
+	}
+}
+
 // Identity represents the source of a command or the owner of a unit.
 type Identity interface {
 	ID() string   // A unique identifier (e.g., PlayerID for a session, "system" for the server)
@@ -261,6 +296,7 @@ type Room struct {
 	MapName    string
 	GameMap    *game.Map
 	ServerUUID string
+	server     *Server
 	MaxPlayers int
 	MaxUnits       int
 	Credits        int32
@@ -270,6 +306,7 @@ type Room struct {
 	SharedControl  bool
 	StartingUnits  int32
 	CreatedAt      time.Time
+	LastActivity   time.Time
 
 	mu           sync.RWMutex
 	InGame       bool
@@ -284,6 +321,9 @@ type Room struct {
 	syncing      bool
 	bannedIDs    map[string]bool
 	activeVote   *Vote
+	checkRequested bool
+	checkSumReceived int32
+	checkSumDeadline time.Time
 	AISlot       int
 	gameCommands chan CommandRequest
 	stopCh       chan struct{}
@@ -392,6 +432,126 @@ func (r *Room) processTick() {
 
 	// Advance step counter (FRAMES_PER_WINDOW = 10)
 	r.currentStep += 10
+
+	// Trigger checksum verification every 300 ticks (~5 seconds)
+	if r.currentStep%300 == 0 && !r.checkRequested {
+		go r.doChecksum()
+	}
+}
+
+// doChecksum sends checksum requests to all clients and waits for responses.
+func (r *Room) doChecksum() {
+	r.mu.Lock()
+	if r.checkRequested {
+		r.mu.Unlock()
+		return
+	}
+	r.checkRequested = true
+	r.checkSumReceived = 0
+	r.checkSumDeadline = time.Now().Add(5 * time.Second)
+	r.mu.Unlock()
+
+	// Reset checksum sent flags for all players
+	for _, player := range r.SnapshotPlayers() {
+		if player != nil {
+			player.checkSumSent = false
+			player.checkList = nil
+		}
+	}
+
+	// Send checksum request to all clients
+	checksumReq := protocol.EncodeSyncChecksum(r.currentStep)
+	r.broadcast(checksumReq)
+
+	// Wait for responses with timeout
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(5 * time.Second)
+
+	for {
+		select {
+		case <-deadline:
+			// Timeout - check what we have
+			r.processChecksumResults()
+			r.mu.Lock()
+			r.checkRequested = false
+			r.mu.Unlock()
+			return
+		case <-ticker.C:
+			// Check if all players have responded
+			players := r.SnapshotPlayers()
+			responded := 0
+			for _, p := range players {
+				if p != nil && p.checkSumSent {
+					responded++
+				}
+			}
+			if responded >= len(players) {
+				r.processChecksumResults()
+				r.mu.Lock()
+				r.checkRequested = false
+				r.mu.Unlock()
+				return
+			}
+		}
+	}
+}
+
+// processChecksumResults compares checksums from all clients.
+func (r *Room) processChecksumResults() {
+	players := r.SnapshotPlayers()
+
+	// Collect players who have responded
+	var responded []*Session
+	for _, p := range players {
+		if p != nil && p.checkSumSent && len(p.checkList) > 0 {
+			responded = append(responded, p)
+		}
+	}
+
+	if len(responded) < 2 {
+		// Not enough players to compare
+		return
+	}
+
+	// Use the first player as reference
+	reference := responded[0].checkList
+	diffCount := 0
+
+	for i := 1; i < len(responded); i++ {
+		if !checksumListsMatch(reference, responded[i].checkList) {
+			diffCount++
+		}
+	}
+
+	// If 2 or more players have different checksums, trigger sync
+	if diffCount >= 2 {
+		// Desync detected - trigger sync
+		go r.TriggerSync(r.server)
+	}
+}
+
+// checksumListsMatch compares two checksum lists with tolerance.
+func checksumListsMatch(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	// Tolerance prefixes for each checksum item (from Rukkit)
+	prefixes := []int64{100000, 100000, 10000, 5, 5, 5, 500, 5, 10, 10, 500, 500, 500, 1000, 1000}
+	for i := range a {
+		prefix := int64(1000) // default tolerance
+		if i < len(prefixes) {
+			prefix = prefixes[i]
+		}
+		diff := a[i] - b[i]
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > prefix {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Room) drainCommands() []CommandRequest {
@@ -458,6 +618,13 @@ func (r *Room) Detail() RoomDetail {
 	}
 }
 
+// TouchActivity updates the last activity timestamp.
+func (r *Room) TouchActivity() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.LastActivity = time.Now()
+}
+
 func (r *Room) Join(session *Session) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -471,6 +638,7 @@ func (r *Room) Join(session *Session) error {
 				r.OwnerID = session.playerID
 				r.adminIDs[session.playerID] = true
 			}
+			r.LastActivity = time.Now()
 			r.syncAutoAILocked()
 			return nil
 		}
