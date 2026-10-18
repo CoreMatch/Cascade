@@ -331,8 +331,15 @@ func (s *Session) handleRegister(body []byte) error {
 	s.name = firstNonBlank(name, s.preregister.PlayerName, "Player")
 	s.playerID = firstNonBlank(playerID, s.id)
 
-	// HA identity is only established via /login or /claim commands.
-	// Guests use pure local identity with no HA interaction.
+	// Create proxy binding (CBH=0) for all players
+	if s.server.db != nil {
+		if err := s.server.db.CreateProxyBinding(s.playerID, s.name); err != nil {
+			s.server.logger.Printf("HA: failed to create proxy binding for %s: %v", s.name, err)
+		}
+	}
+
+	// Try to restore HA authentication state (from Redis)
+	s.restoreHABinding()
 
 	if err := s.Send(protocol.EncodeRelayVersionInfo(int32(s.clientVersion))); err != nil {
 		return err

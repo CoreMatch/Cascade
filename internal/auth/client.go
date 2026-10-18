@@ -89,6 +89,58 @@ func (c *Client) getToken() (string, error) {
 	return c.token, nil
 }
 
+// RegisterResult holds the response from POST /register on HA core.
+type RegisterResult struct {
+	Success bool   `json:"success"`
+	UID     int    `json:"uid"`
+	UUID    string `json:"uuid"`
+	Message string `json:"message"`
+}
+
+// Register calls POST /register on HA core to create a new user account.
+func (c *Client) Register(email, username, password string) (*RegisterResult, error) {
+	token, err := c.getToken()
+	if err != nil {
+		return nil, fmt.Errorf("get token: %w", err)
+	}
+
+	body := map[string]string{
+		"email":    email,
+		"username": username,
+		"password": password,
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/register", &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result RegisterResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return &result, fmt.Errorf("register failed (status %d): %s", resp.StatusCode, result.Message)
+	}
+
+	return &result, nil
+}
+
 // VerifyCredentials calls POST /internal/verify-credentials on HA core.
 // Returns the user info on success, nil on invalid credentials.
 func (c *Client) VerifyCredentials(identifier, password string) (*UserInfo, error) {

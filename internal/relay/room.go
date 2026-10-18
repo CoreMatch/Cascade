@@ -240,7 +240,7 @@ func (m *Manager) nextCode() string {
 	}
 }
 
-// StartCleanup starts a goroutine that periodically cleans up empty rooms.
+// StartCleanup starts a goroutine that periodically cleans up empty rooms and stale proxy bindings.
 func (m *Manager) StartCleanup(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
@@ -251,6 +251,20 @@ func (m *Manager) StartCleanup(ctx context.Context) {
 				return
 			case <-ticker.C:
 				m.cleanupStaleRooms()
+			}
+		}
+	}()
+
+	// Proxy binding cleanup every 24 hours
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.cleanupStaleProxyBindings()
 			}
 		}
 	}()
@@ -267,6 +281,21 @@ func (m *Manager) cleanupStaleRooms() {
 			room.Stop()
 			delete(m.rooms, code)
 		}
+	}
+}
+
+// cleanupStaleProxyBindings removes proxy bindings (CBH=0) that haven't logged in for 30 days.
+func (m *Manager) cleanupStaleProxyBindings() {
+	if m.server.db == nil {
+		return
+	}
+	deleted, err := m.server.db.CleanupStaleProxyBindings()
+	if err != nil {
+		m.server.logger.Printf("[cleanup] failed to cleanup proxy bindings: %v", err)
+		return
+	}
+	if deleted > 0 {
+		m.server.logger.Printf("[cleanup] removed %d stale proxy bindings", deleted)
 	}
 }
 

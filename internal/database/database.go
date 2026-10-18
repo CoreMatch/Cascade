@@ -55,13 +55,16 @@ func (db *DB) Conn() *sql.DB {
 }
 
 // PlayerBinding represents a mapping between a game UUID and an HA user UUID.
+// CBH (Created By Human): 0 = proxy account (guest), 1 = claimed account (authenticated).
 type PlayerBinding struct {
 	ID          int64
 	GameUUID    string
 	HAUserUUID  string
 	PlayerName  string
+	CBH         int // 0=proxy, 1=claimed
 	QuickAuth   bool
 	LastLogin   string
+	ClaimedAt   *string
 	CreatedAt   string
 }
 
@@ -69,10 +72,11 @@ type PlayerBinding struct {
 func (db *DB) GetBindingByGameUUID(gameUUID string) (*PlayerBinding, error) {
 	var b PlayerBinding
 	var quickAuth int
+	var claimedAt sql.NullString
 	err := db.conn.QueryRow(
-		"SELECT id, game_uuid, ha_user_uuid, player_name, quick_auth, last_login, created_at FROM player_bindings WHERE game_uuid = ?",
+		"SELECT id, game_uuid, ha_user_uuid, player_name, cbh, quick_auth, last_login, claimed_at, created_at FROM player_bindings WHERE game_uuid = ?",
 		gameUUID,
-	).Scan(&b.ID, &b.GameUUID, &b.HAUserUUID, &b.PlayerName, &quickAuth, &b.LastLogin, &b.CreatedAt)
+	).Scan(&b.ID, &b.GameUUID, &b.HAUserUUID, &b.PlayerName, &b.CBH, &quickAuth, &b.LastLogin, &claimedAt, &b.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -80,19 +84,63 @@ func (db *DB) GetBindingByGameUUID(gameUUID string) (*PlayerBinding, error) {
 		return nil, err
 	}
 	b.QuickAuth = quickAuth != 0
+	if claimedAt.Valid {
+		b.ClaimedAt = &claimedAt.String
+	}
 	return &b, nil
 }
 
-// UpsertBinding creates or updates a player binding.
-func (db *DB) UpsertBinding(gameUUID, haUserUUID, playerName string) error {
+// GetBindingByPlayerName looks up a player binding by player name.
+func (db *DB) GetBindingByPlayerName(playerName string) (*PlayerBinding, error) {
+	var b PlayerBinding
+	var quickAuth int
+	var claimedAt sql.NullString
+	err := db.conn.QueryRow(
+		"SELECT id, game_uuid, ha_user_uuid, player_name, cbh, quick_auth, last_login, claimed_at, created_at FROM player_bindings WHERE player_name = ?",
+		playerName,
+	).Scan(&b.ID, &b.GameUUID, &b.HAUserUUID, &b.PlayerName, &b.CBH, &quickAuth, &b.LastLogin, &claimedAt, &b.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	b.QuickAuth = quickAuth != 0
+	if claimedAt.Valid {
+		b.ClaimedAt = &claimedAt.String
+	}
+	return &b, nil
+}
+
+// CreateProxyBinding creates a new proxy binding (CBH=0) for a guest player.
+func (db *DB) CreateProxyBinding(gameUUID, playerName string) error {
 	_, err := db.conn.Exec(`
-		INSERT INTO player_bindings (game_uuid, ha_user_uuid, player_name, quick_auth, last_login)
-		VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+		INSERT INTO player_bindings (game_uuid, ha_user_uuid, player_name, cbh, quick_auth, last_login)
+		VALUES (?, '', ?, 0, 1, CURRENT_TIMESTAMP)
 		ON CONFLICT(game_uuid) DO UPDATE SET
-			ha_user_uuid = excluded.ha_user_uuid,
 			player_name = excluded.player_name,
 			last_login = CURRENT_TIMESTAMP
-	`, gameUUID, haUserUUID, playerName)
+	`, gameUUID, playerName)
+	return err
+}
+
+// ClaimBinding marks a proxy binding as claimed (CBH=1) and links it to an HA user.
+func (db *DB) ClaimBinding(gameUUID, haUserUUID string) error {
+	_, err := db.conn.Exec(`
+		UPDATE player_bindings
+		SET ha_user_uuid = ?, cbh = 1, claimed_at = CURRENT_TIMESTAMP, last_login = CURRENT_TIMESTAMP
+		WHERE game_uuid = ? AND cbh = 0
+	`, haUserUUID, gameUUID)
+	return err
+}
+
+// UpdateBindingHAUUID updates the HA user UUID for an existing binding.
+func (db *DB) UpdateBindingHAUUID(gameUUID, haUserUUID string) error {
+	_, err := db.conn.Exec(`
+		UPDATE player_bindings
+		SET ha_user_uuid = ?, last_login = CURRENT_TIMESTAMP
+		WHERE game_uuid = ?
+	`, haUserUUID, gameUUID)
 	return err
 }
 
@@ -104,4 +152,16 @@ func (db *DB) SetQuickAuth(gameUUID string, enabled bool) error {
 	}
 	_, err := db.conn.Exec("UPDATE player_bindings SET quick_auth = ? WHERE game_uuid = ?", val, gameUUID)
 	return err
+}
+
+// CleanupStaleProxyBindings deletes proxy bindings (CBH=0) that haven't logged in for30 days.
+func (db *DB) CleanupStaleProxyBindings() (int64, error) {
+	result, err := db.conn.Exec(`
+		DELETE FROM player_bindings
+		WHERE cbh = 0 AND last_login < datetime('now', '-30 days')
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

@@ -855,6 +855,7 @@ func DefaultRegistry() *CommandRegistry {
 
 	// --- HA Authentication commands ---
 
+	// /login - Verify HA credentials and link proxy account (CBH stays 0)
 	reg.Register("login", "登录 HA 账号 (用法: /login <邮箱/用户名> <密码>)", false, func(ctx *CommandContext) {
 		if len(ctx.Args) < 2 {
 			ctx.Reply("用法: /login <邮箱/用户名> <密码>")
@@ -891,8 +892,8 @@ func DefaultRegistry() *CommandRegistry {
 			return
 		}
 
-		// Store binding: game_uuid <-> ha_user_uuid
-		if err := s.server.db.UpsertBinding(s.playerID, user.UUID, s.name); err != nil {
+		// Update binding with HA user UUID (CBH stays 0, not claimed yet)
+		if err := s.server.db.UpdateBindingHAUUID(s.playerID, user.UUID); err != nil {
 			ctx.Reply("绑定失败: " + err.Error())
 			return
 		}
@@ -910,6 +911,72 @@ func DefaultRegistry() *CommandRegistry {
 		ctx.Reply(fmt.Sprintf("认证成功！欢迎, %s", user.Username))
 		ctx.Room.broadcastSystem(fmt.Sprintf("%s 已通过 HA 认证", s.name))
 		s.server.logger.Printf("HA: %s authenticated as %s (uuid=%s)", s.name, user.Username, user.UUID)
+	})
+
+	// /claim - Claim proxy account by registering in HA (CBH 0→1)
+	reg.Register("claim", "认领账号到 HA (用法: /claim <新密码> <邮箱>)", false, func(ctx *CommandContext) {
+		if len(ctx.Args) < 2 {
+			ctx.Reply("用法: /claim <新密码> <邮箱>")
+			return
+		}
+
+		s, ok := ctx.Sender.(*Session)
+		if !ok {
+			return
+		}
+
+		if s.server.auth == nil {
+			ctx.Reply("认证服务未配置。")
+			return
+		}
+
+		// Check if already claimed
+		binding, err := s.server.db.GetBindingByGameUUID(s.playerID)
+		if err != nil || binding == nil {
+			ctx.Reply("未找到你的账号记录。")
+			return
+		}
+		if binding.CBH == 1 {
+			ctx.Reply("你的账号已经被认领过了。")
+			return
+		}
+
+		password := ctx.Args[0]
+		email := ctx.Args[1]
+
+		if len(password) < 6 {
+			ctx.Reply("密码长度至少 6 位。")
+			return
+		}
+
+		// Register in HA core
+		result, err := s.server.auth.Register(email, s.name, password)
+		if err != nil {
+			ctx.Reply("注册失败: " + err.Error())
+			s.server.logger.Printf("HA claim register error for %s: %v", s.name, err)
+			return
+		}
+
+		// Claim the binding (CBH 0→1)
+		if err := s.server.db.ClaimBinding(s.playerID, result.UUID); err != nil {
+			ctx.Reply("认领失败: " + err.Error())
+			return
+		}
+
+		// Update authentication state
+		s.haUserUUID = result.UUID
+		s.authenticated = true
+
+		// Store in Redis
+		if s.server.rdb != nil {
+			_ = s.server.rdb.SetAuthenticated(s.playerID, result.UUID, 24*time.Hour)
+		}
+
+		ctx.Reply("认领成功！你的游戏账号已关联到 HA 账号。")
+		ctx.Reply(fmt.Sprintf("邮箱: %s", email))
+		ctx.Reply("请记住你的登录信息！")
+		ctx.Room.broadcastSystem(fmt.Sprintf("%s 已认领 HA 账号", s.name))
+		s.server.logger.Printf("HA: %s claimed as %s (uuid=%s)", s.name, email, result.UUID)
 	})
 
 	reg.Register("whoami", "显示当前认证状态", false, func(ctx *CommandContext) {
