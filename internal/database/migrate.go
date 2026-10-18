@@ -44,6 +44,7 @@ var migrations = []Migration{
 					game_uuid    TEXT    NOT NULL,
 					ha_user_uuid TEXT    NOT NULL DEFAULT '',
 					player_name  TEXT    NOT NULL DEFAULT '',
+					quick_auth   INTEGER NOT NULL DEFAULT 1,
 					last_login   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					UNIQUE(game_uuid)

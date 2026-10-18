@@ -661,21 +661,26 @@ func (s *Session) restoreHABinding() {
 		return
 	}
 
-	// Check Redis for authentication state (transient, with TTL)
-	haUserUUID, ok := s.server.rdb.IsAuthenticated(s.playerID)
-	if !ok {
+	// 1. Check Redis for normal authentication state (transient, 24h TTL)
+	if haUserUUID, ok := s.server.rdb.IsAuthenticated(s.playerID); ok {
+		s.haUserUUID = haUserUUID
+		s.authenticated = true
+		s.server.logger.Printf("HA: restored auth for %s -> uuid=%s", s.playerID, haUserUUID)
 		return
 	}
 
-	// Verify the binding exists in database
-	binding, err := s.server.db.GetBindingByGameUUID(s.playerID)
-	if err != nil || binding == nil {
-		return
+	// 2. Check Redis for quick auth state (transient, 2 min TTL)
+	if haUserUUID, ok := s.server.rdb.CheckQuickAuth(s.playerID); ok {
+		// Verify the binding exists in database
+		binding, err := s.server.db.GetBindingByGameUUID(s.playerID)
+		if err == nil && binding != nil {
+			s.haUserUUID = haUserUUID
+			s.authenticated = true
+			// Upgrade to normal auth (24h TTL)
+			_ = s.server.rdb.SetAuthenticated(s.playerID, haUserUUID, 24*time.Hour)
+			s.server.logger.Printf("HA: quick auth restored for %s -> uuid=%s", s.playerID, haUserUUID)
+		}
 	}
-
-	s.haUserUUID = haUserUUID
-	s.authenticated = true
-	s.server.logger.Printf("HA: restored binding for %s -> uuid=%s", s.playerID, haUserUUID)
 }
 
 func (s *Session) buildPreregisterPacket(handshakeID string) (protocol.Packet, error) {

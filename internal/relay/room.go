@@ -659,6 +659,18 @@ func (r *Room) Leave(session *Session) {
 					Team:     session.team,
 					LeftAt:   time.Now(),
 				}
+
+				// Set quick auth in Redis if player is authenticated and has quick_auth enabled
+				if session.authenticated && session.haUserUUID != "" && r.server.rdb != nil {
+					binding, err := r.server.db.GetBindingByGameUUID(session.playerID)
+					if err == nil && binding != nil && binding.QuickAuth {
+						if err := r.server.rdb.SetQuickAuth(session.playerID, session.haUserUUID, 2*time.Minute); err != nil {
+							r.server.logger.Printf("HA: failed to set quick auth for %s: %v", session.playerID, err)
+						} else {
+							r.server.logger.Printf("HA: quick auth set for %s (2 min TTL)", session.playerID)
+						}
+					}
+				}
 			}
 
 			r.players[idx] = nil

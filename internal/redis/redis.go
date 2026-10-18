@@ -65,3 +65,22 @@ func (c *Client) ClearAuthenticated(gameUUID string) error {
 	key := c.prefix + "auth:" + gameUUID
 	return c.rdb.Del(ctx, key).Err()
 }
+
+// SetQuickAuth marks a game_uuid for quick reconnection auth with a short TTL.
+func (c *Client) SetQuickAuth(gameUUID, haUserUUID string, ttl time.Duration) error {
+	ctx := context.Background()
+	key := c.prefix + "quick_auth:" + gameUUID
+	return c.rdb.Set(ctx, key, haUserUUID, ttl).Err()
+}
+
+// CheckQuickAuth checks if a game_uuid has quick auth available.
+// Returns the HA user UUID and true if quick auth is valid, empty string and false otherwise.
+func (c *Client) CheckQuickAuth(gameUUID string) (string, bool) {
+	ctx := context.Background()
+	key := c.prefix + "quick_auth:" + gameUUID
+	val, err := c.rdb.Get(ctx, key).Result()
+	if err != nil {
+		return "", false
+	}
+	return val, true
+}
