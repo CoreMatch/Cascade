@@ -521,6 +521,7 @@ func (s *Session) joinRoom(code string) error {
 			go room.TriggerSync(s.server)
 		} else {
 			_ = s.systemMessage(fmt.Sprintf("欢迎回到房间 %s!", room.Code))
+			_ = s.systemMessage(room.commands.PlayerHelpText())
 			room.broadcastSystem(fmt.Sprintf("%s 已重连。", s.name))
 		}
 
