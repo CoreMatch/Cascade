@@ -538,6 +538,11 @@ func (s *Session) Send(packet protocol.Packet) error {
 	}
 }
 
+// Close closes the session connection.
+func (s *Session) Close() {
+	s.close()
+}
+
 func (s *Session) close() {
 	s.once.Do(func() {
 		room := s.Room()

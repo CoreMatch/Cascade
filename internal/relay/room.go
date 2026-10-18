@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"rwgin/internal/config"
-	"rwgin/internal/game"
 	"rwgin/internal/game/mod"
 	"rwgin/internal/protocol"
 )
@@ -140,17 +138,11 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 	}
 
 	mapName := defaultIfBlank(m.cfg.DefaultMapName, "unit_types_test.tmx")
-	var gameMap *game.Map
-	mapPath := filepath.Join(m.cfg.MapsDir, mapName)
-	if loaded, err := game.LoadMap(mapPath); err == nil {
-		gameMap = loaded
-	}
 
 	room := &Room{
 		Code:         normalized,
 		Title:        defaultIfBlank(title, m.cfg.DefaultRoomName+" "+normalized),
 		MapName:      mapName,
-		GameMap:      gameMap,
 		ServerUUID:   defaultIfBlank(uuid, randomHex(16)),
 		server:       m.server,
 		MaxPlayers:   maxPlayers,
@@ -171,12 +163,8 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		AISlot:       -1,
 		gameCommands: make(chan CommandRequest, 128),
 		stopCh:       make(chan struct{}),
-		gameState:    game.NewState(),
 		commands:     DefaultRegistry(),
 		startVotes:   make(map[string]bool),
-	}
-	if gameMap != nil {
-		room.gameState.SetMap(gameMap)
 	}
 	m.rooms[normalized] = room
 
@@ -230,6 +218,16 @@ func (m *Manager) RemoveIfEmpty(room *Room) {
 	defer m.mu.Unlock()
 	if current, ok := m.rooms[room.Code]; ok && current == room && room.PlayerCount() == 0 {
 		delete(m.rooms, room.Code)
+	}
+}
+
+// Remove removes a room by code.
+func (m *Manager) Remove(code string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if room, ok := m.rooms[code]; ok {
+		room.Stop()
+		delete(m.rooms, code)
 	}
 }
 
@@ -294,7 +292,6 @@ type Room struct {
 	Code       string
 	Title      string
 	MapName    string
-	GameMap    *game.Map
 	ServerUUID string
 	server     *Server
 	MaxPlayers int
@@ -328,7 +325,6 @@ type Room struct {
 	gameCommands chan CommandRequest
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
-	gameState    *game.State
 	commands     *CommandRegistry
 	startVotes   map[string]bool
 }
@@ -1114,6 +1110,69 @@ func (r *Room) TriggerSync(server *Server) {
 			}
 		}
 	}()
+}
+
+// SetTitle sets the room title.
+func (r *Room) SetTitle(title string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Title = title
+}
+
+// SetMapName sets the map name.
+func (r *Room) SetMapName(mapName string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.MapName = mapName
+}
+
+// SetCredits sets the credits.
+func (r *Room) SetCredits(credits int32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Credits = credits
+}
+
+// SetFogOfWar sets the fog of war type.
+func (r *Room) SetFogOfWar(fog int32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.FogOfWar = fog
+}
+
+// SetIncome sets the income multiplier.
+func (r *Room) SetIncome(income float32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Income = income
+}
+
+// SetDisableNuke sets the disable nuke flag.
+func (r *Room) SetDisableNuke(disable bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.DisableNuke = disable
+}
+
+// SetSharedControl sets the shared control flag.
+func (r *Room) SetSharedControl(shared bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.SharedControl = shared
+}
+
+// SetStartingUnits sets the starting units.
+func (r *Room) SetStartingUnits(units int32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.StartingUnits = units
+}
+
+// SetMaxUnits sets the max units per player.
+func (r *Room) SetMaxUnits(maxUnits int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.MaxUnits = maxUnits
 }
 
 func (r *Room) FindTarget(input string) (*Session, error) {
