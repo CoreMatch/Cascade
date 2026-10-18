@@ -6,6 +6,8 @@ import (
         "fmt"
         "log"
         "net"
+        "os"
+        "path/filepath"
         "strings"
         "sync"
         "sync/atomic"
@@ -162,12 +164,16 @@ func (s *Session) writeLoop() {
 }
 
 func (s *Session) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.closeCh:
 			return
+		case <-ticker.C:
+			_ = s.Send(protocol.EncodeHeartbeat())
 		}
 	}
 }
@@ -200,6 +206,19 @@ func (s *Session) handlePacket(packet protocol.Packet) error {
 		return s.handleReturnToBattleRoom(packet)
 	case protocol.TypeGameCommand:
 		return s.handleGameCommand(packet)
+	case protocol.TypeSyncChecksum:
+		// Acknowledge, no-op for now
+		return nil
+	case protocol.TypeSync:
+		// Forward to room for relay
+		room := s.Room()
+		if room != nil {
+			room.broadcast(packet)
+		}
+		return nil
+	case protocol.TypeReady:
+		// Acknowledge, no-op for now
+		return nil
 	case protocol.TypeDisconnect:
 		return errors.New("client requested disconnect")
 	default:
@@ -324,10 +343,18 @@ func (s *Session) handleStartGame(packet protocol.Packet) error {
 	room.SetInGame(true)
 	room.broadcastSystem(fmt.Sprintf("游戏已由 %s 开始。", s.name))
 
-	startGamePacket, err := protocol.EncodeStartGame()
-	if err == nil {
-		room.broadcast(startGamePacket)
+	mapName := room.MapName
+	mapPath := filepath.Join(s.server.cfg.MapsDir, mapName)
+	mapData, err := os.ReadFile(mapPath)
+	isCustomMap := false
+	if err != nil {
+		// If map file not found, send without map data (client uses built-in)
+		mapData = nil
+		isCustomMap = false
 	}
+
+	startGamePacket := protocol.EncodeStartGame(mapName, mapData, isCustomMap)
+	room.broadcast(startGamePacket)
 
 	return nil
 }
@@ -388,31 +415,26 @@ func (s *Session) joinRoom(code string) error {
 }
 
 func (s *Session) sendServerInfo(room *Room) error {
-	w := protocol.NewWriter()
-        clientVersion := s.clientVersion
-        if clientVersion <= 0 {
-                clientVersion = s.server.cfg.DefaultClientVersion
-        }
-
-        // Relay custom rooms use the shorter server-info shape and advertise a
-        // stable server identifier instead of a per-room UUID.
-        if err := w.String(s.server.cfg.ServerID); err != nil {
-		return err
+	clientVersion := int32(s.clientVersion)
+	if clientVersion <= 0 {
+		clientVersion = int32(s.server.cfg.DefaultClientVersion)
 	}
-        w.Int32(int32(clientVersion))
-	w.Int32(0)
-        if err := w.String(room.Title); err != nil {
-		return err
-	}
-        w.Int32(0)
-        w.Int32(2)
-        w.Bool(true)
-        w.Int32(1)
-        w.Byte(0)
-	w.Bool(false)
-        w.Bool(false)
 
-        return s.Send(w.Packet(protocol.TypeServerInfo))
+	cfg := protocol.ServerInfoConfig{
+		MapType:           0,
+		MapName:           room.MapName,
+		Credits:           room.Credits,
+		FogType:           room.FogOfWar,
+		IsAdmin:           room.IsAdmin(s),
+		MaxUnitsPerPlayer: int32(room.MaxUnits),
+		StartingUnits:     1,
+		Income:            room.Income,
+		DisableNuke:       false,
+		SharedControl:     false,
+	}
+
+	packet := protocol.EncodeServerInfo(cfg, clientVersion)
+	return s.Send(packet)
 }
 
 func (s *Session) Send(packet protocol.Packet) error {

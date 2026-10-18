@@ -245,6 +245,7 @@ type Room struct {
 
 	mu           sync.RWMutex
 	InGame       bool
+	currentStep  int32
 	OwnerID      string
 	players      []*Session
 	adminIDs     map[string]bool
@@ -279,7 +280,8 @@ func (r *Room) Summary() RoomSummary {
 func (r *Room) run() {
 	defer r.wg.Done()
 
-	ticker := time.NewTicker(time.Second / 60)
+	// 10 frames at 60fps = ~167ms per tick (6 ticks/second)
+	ticker := time.NewTicker(10 * time.Second / 60)
 	teamListTicker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	defer teamListTicker.Stop()
@@ -314,71 +316,24 @@ func (r *Room) PushCommand(cmd CommandRequest) {
 
 func (r *Room) processTick() {
 	commands := r.drainCommands()
+
+	// Collect raw command bytes for relay (no server-side parsing)
+	var rawCommands [][]byte
 	for _, cmdRequest := range commands {
-		subCommands, err := protocol.ParseSubCommands(cmdRequest.Packet.Data)
-		if err != nil {
-			// Consider logging this error
-			continue
-		}
-
-		for _, subCmd := range subCommands {
-			switch sc := subCmd.(type) {
-			case protocol.SubCommandChatPacket:
-				r.handleChat(cmdRequest.Sender, sc.Message)
-			case protocol.SubCommandUnitAddPacket:
-				r.gameState.AddUnit(sc.UnitType, cmdRequest.Sender.ID(), sc.X, sc.Y)
-			case protocol.SubCommandUnitMovePacket:
-				ids := make([]game.UnitID, len(sc.UnitIDs))
-				for i, id := range sc.UnitIDs {
-					ids[i] = game.UnitID(id)
-				}
-				// TODO: Add security check: does cmdRequest.Sender own these units?
-				r.gameState.MoveUnits(ids, sc.X, sc.Y)
-			}
-		}
+		rawCommands = append(rawCommands, cmdRequest.Packet.Data)
 	}
 
-	// Broadcast game state updates.
-	changes := r.gameState.CollectAndClearChanges()
-	if len(changes) > 0 {
-		var w protocol.Writer
-		for unitID, changeType := range changes {
-			unit, ok := r.gameState.GetUnit(unitID)
-			if !ok {
-				continue
-			}
-
-			switch changeType {
-			case game.ChangeTypeCreated:
-				addCmd := protocol.SubCommandServerUnitAddPacket{
-					UnitID:   int64(unit.ID),
-					UnitType: unit.Type,
-					X:        unit.X,
-					Y:        unit.Y,
-					Owner:    unit.Owner, // This now correctly holds the PlayerID
-				}
-				_ = addCmd.Encode(&w)
-			case game.ChangeTypeMoved:
-				moveCmd := protocol.SubCommandServerUnitMovePacket{
-					UnitID: int64(unit.ID),
-					X:      unit.X,
-					Y:      unit.Y,
-				}
-				_ = moveCmd.Encode(&w)
-			}
-		}
-
-		if len(w.Bytes()) > 0 {
-			gameCmd := protocol.GameCommandPacket{
-				Packet: protocol.Packet{
-					Type: protocol.TypeGameCommand,
-					Body: w.Bytes(),
-				},
-				Data: w.Bytes(),
-			}
-			r.broadcast(gameCmd.Packet)
-		}
+	// Build and broadcast TICK packet
+	var tickPacket protocol.Packet
+	if len(rawCommands) > 0 {
+		tickPacket = protocol.EncodeTickCommands(r.currentStep, rawCommands)
+	} else {
+		tickPacket = protocol.EncodeTickEmpty(r.currentStep)
 	}
+	r.broadcast(tickPacket)
+
+	// Advance step counter (FRAMES_PER_WINDOW = 10)
+	r.currentStep += 10
 }
 
 func (r *Room) drainCommands() []CommandRequest {
@@ -529,6 +484,7 @@ func (r *Room) SetInGame(value bool) {
 	defer r.mu.Unlock()
 	r.InGame = value
 	if value {
+		r.currentStep = 0
 		r.startVotes = make(map[string]bool)
 	}
 }

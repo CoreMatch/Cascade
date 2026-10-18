@@ -156,10 +156,8 @@ func (s *Session) HandleStartGame(starter *Player) {
 	}
 
 	// Also broadcast the actual "start game" packet.
-	startGamePacket, err := protocol.EncodeStartGame()
-	if err == nil {
-		s.broadcast(startGamePacket, "")
-	}
+	startGamePacket := protocol.EncodeStartGame("", nil, false)
+	s.broadcast(startGamePacket, "")
 }
 
 func (s *Session) HandleChatMessage(from *Player, message string) {
