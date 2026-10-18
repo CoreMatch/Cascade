@@ -1,0 +1,1 @@
+ALTER TABLE player_bindings ADD COLUMN lang VARCHAR(10) NOT NULL DEFAULT 'en';

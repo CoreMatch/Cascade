@@ -2,10 +2,12 @@ package relay
 
 import (
 	"fmt"
-	"rwgin/internal/protocol"
 	"strconv"
 	"strings"
 	"time"
+
+	"rwgin/internal/i18n"
+	"rwgin/internal/protocol"
 )
 
 // CommandContext provides information about the command being executed.
@@ -23,12 +25,20 @@ func (c *CommandContext) Reply(message string) {
 	}
 }
 
+// T returns a translated message for the sender's locale.
+func (c *CommandContext) T(key string, args ...any) string {
+	if s, ok := c.Sender.(*Session); ok {
+		return s.T(key, args...)
+	}
+	return i18n.T(i18n.LangEN, key, args...)
+}
+
 // CommandHandler is a function that handles a specific command.
 type CommandHandler func(ctx *CommandContext)
 
 type commandEntry struct {
 	handler     CommandHandler
-	description string
+	description string // stores the i18n key
 	adminOnly   bool
 }
 
@@ -79,7 +89,7 @@ func (r *CommandRegistry) Handle(room *Room, sender Identity, message string) bo
 	if entry.adminOnly {
 		if s, ok := sender.(*Session); ok {
 			if !room.IsAdmin(s) {
-				if err := s.systemMessage("需要管理员权限。"); err != nil {
+				if err := s.systemMessage(s.T("msg.admin_required")); err != nil {
 					return true
 				}
 				return true
@@ -99,15 +109,15 @@ func (r *CommandRegistry) Handle(room *Room, sender Identity, message string) bo
 }
 
 // PlayerHelpText returns a help string listing only commands available to non-admin players.
-func (r *CommandRegistry) PlayerHelpText() string {
+func (r *CommandRegistry) PlayerHelpText(locale string) string {
 	var lines []string
 	for name, entry := range r.commands {
 		if entry.adminOnly {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("/%s - %s", name, entry.description))
+		lines = append(lines, fmt.Sprintf("/%s - %s", name, i18n.T(locale, entry.description)))
 	}
-	return "可用指令:\n" + strings.Join(lines, "\n")
+	return i18n.T(locale, "available_commands") + "\n" + strings.Join(lines, "\n")
 }
 
 // DefaultRegistry returns a registry with all built-in commands.
@@ -116,14 +126,18 @@ func DefaultRegistry() *CommandRegistry {
 
 	// --- General commands ---
 
-	reg.Register("help", "显示所有可用命令", false, func(ctx *CommandContext) {
+	reg.Register("help", "cmd.help.desc", false, func(ctx *CommandContext) {
 		var lines []string
+		locale := i18n.LangEN
+		if s, ok := ctx.Sender.(*Session); ok {
+			locale = s.Locale()
+		}
 		for name, entry := range reg.commands {
 			adminTag := ""
 			if entry.adminOnly {
-				adminTag = " [管理]"
+				adminTag = " " + i18n.T(locale, "admin_tag")
 			}
-			lines = append(lines, fmt.Sprintf("/%s - %s%s", name, entry.description, adminTag))
+			lines = append(lines, fmt.Sprintf("/%s - %s%s", name, i18n.T(locale, entry.description), adminTag))
 		}
 		// Sort for consistent output
 		joined := strings.Join(lines, "\n")
@@ -132,15 +146,19 @@ func DefaultRegistry() *CommandRegistry {
 		}
 	})
 
-	reg.Register("ping", "测试延迟", false, func(ctx *CommandContext) {
+	reg.Register("ping", "cmd.ping.desc", false, func(ctx *CommandContext) {
 		ctx.Reply("Pong!")
 	})
 
-	reg.Register("list", "显示房间成员列表", false, func(ctx *CommandContext) {
-		ctx.Reply("当前房间成员:\n" + ctx.Room.MembersText())
+	reg.Register("list", "cmd.list.desc", false, func(ctx *CommandContext) {
+		locale := i18n.LangEN
+		if s, ok := ctx.Sender.(*Session); ok {
+			locale = s.Locale()
+		}
+		ctx.Reply(ctx.Room.MembersText(locale))
 	})
 
-	reg.Register("info", "显示房间详细信息", false, func(ctx *CommandContext) {
+	reg.Register("info", "cmd.info.desc", false, func(ctx *CommandContext) {
 		r := ctx.Room
 		r.mu.RLock()
 		detail := r.Summary()
@@ -153,34 +171,39 @@ func DefaultRegistry() *CommandRegistry {
 		paused := r.paused
 		r.mu.RUnlock()
 
-		status := "等待中"
+		locale := i18n.LangEN
+		if s, ok := ctx.Sender.(*Session); ok {
+			locale = s.Locale()
+		}
+
+		status := i18n.T(locale, "status.waiting")
 		if detail.InGame {
 			if paused {
-				status = "游戏中 (已暂停)"
+				status = i18n.T(locale, "status.ingame_paused")
 			} else {
-				status = "游戏中"
+				status = i18n.T(locale, "status.ingame")
 			}
 		}
-		fogText := fogTypeText(fog)
-		info := fmt.Sprintf("房间: %s\n地图: %s\n人数: %d/%d\n状态: %s\n资金: %d\n收入: %.1f\n最大单位: %d\n迷雾: %s\n核弹: %s\n共享控制: %s",
+		fogText := fogTypeText(locale, fog)
+		info := fmt.Sprintf(i18n.T(locale, "info.title"),
 			detail.Title, detail.MapName, detail.Players, detail.MaxPlayers,
 			status, credits, income, maxUnits, fogText,
-			boolText(!nuke), boolText(shared))
+			boolText(locale, !nuke), boolText(locale, shared))
 		ctx.Reply(info)
 	})
 
-	reg.Register("maps", "列出可用地图", false, func(ctx *CommandContext) {
+	reg.Register("maps", "cmd.maps.desc", false, func(ctx *CommandContext) {
 		maps := ctx.Room.commands // access through room to get manager
 		_ = maps                  // we need the manager
 		// Get maps from the room's manager via the session
 		if s, ok := ctx.Sender.(*Session); ok {
 			mapsList := s.server.rooms.ListMaps()
 			if len(mapsList) == 0 {
-				ctx.Reply("没有可用的地图。")
+				ctx.Reply(ctx.T("msg.no_maps"))
 				return
 			}
 			var sb strings.Builder
-			sb.WriteString("可用地图:\n")
+			sb.WriteString(ctx.T("msg.available_maps") + "\n")
 			for i, m := range mapsList {
 				sb.WriteString(fmt.Sprintf("[%d] %s\n", i, m))
 			}
@@ -190,9 +213,9 @@ func DefaultRegistry() *CommandRegistry {
 
 	// --- Admin game config commands ---
 
-	reg.Register("map", "设置地图 (用法: /map <名称或索引>)", true, func(ctx *CommandContext) {
+	reg.Register("map", "cmd.map.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /map <地图名称或索引>")
+			ctx.Reply(ctx.T("msg.usage.map"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
@@ -218,7 +241,7 @@ func DefaultRegistry() *CommandRegistry {
 					}
 				}
 				if !found {
-					ctx.Reply(fmt.Sprintf("未找到地图: %s", mapArg))
+					ctx.Reply(ctx.T("msg.map_not_found", mapArg))
 					return
 				}
 			}
@@ -227,54 +250,54 @@ func DefaultRegistry() *CommandRegistry {
 			ctx.Room.MapName = mapName
 			ctx.Room.mu.Unlock()
 
-			ctx.Room.broadcastSystem(fmt.Sprintf("地图已更改为: %s", mapName))
+			ctx.Room.broadcastSystemKey("msg.map_changed", mapName)
 			ctx.Room.broadcastServerInfo(s.server)
 		}
 	})
 
-	reg.Register("credits", "设置初始资金 (用法: /credits <金额>)", true, func(ctx *CommandContext) {
+	reg.Register("credits", "cmd.credits.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /credits <金额>")
+			ctx.Reply(ctx.T("msg.usage.credits"))
 			return
 		}
 		val, err := strconv.Atoi(ctx.Args[0])
 		if err != nil || val < 0 {
-			ctx.Reply("请输入有效的非负整数。")
+			ctx.Reply(ctx.T("msg.invalid_nonneg_int"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		ctx.Room.Credits = int32(val)
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("初始资金已设为: %d", val))
+		ctx.Room.broadcastSystemKey("msg.credits_set", val)
 		if s, ok := ctx.Sender.(*Session); ok {
 			ctx.Room.broadcastServerInfo(s.server)
 		}
 	})
 
-	reg.Register("income", "设置收入倍率 (用法: /income <0.0-100.0>)", true, func(ctx *CommandContext) {
+	reg.Register("income", "cmd.income.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /income <倍率>")
+			ctx.Reply(ctx.T("msg.usage.income"))
 			return
 		}
 		val, err := strconv.ParseFloat(ctx.Args[0], 32)
 		if err != nil || val < 0 || val > 100 {
-			ctx.Reply("请输入 0-100 之间的数值。")
+			ctx.Reply(ctx.T("msg.invalid_0_100"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		ctx.Room.Income = float32(val)
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("收入倍率已设为: %.1f", val))
+		ctx.Room.broadcastSystemKey("msg.income_set", val)
 		if s, ok := ctx.Sender.(*Session); ok {
 			ctx.Room.broadcastServerInfo(s.server)
 		}
 	})
 
-	reg.Register("fog", "设置战争迷雾 (用法: /fog <off|basic|los>)", true, func(ctx *CommandContext) {
+	reg.Register("fog", "cmd.fog.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /fog <off|basic|los>")
+			ctx.Reply(ctx.T("msg.usage.fog"))
 			return
 		}
 		var fogType int32
@@ -286,95 +309,107 @@ func DefaultRegistry() *CommandRegistry {
 		case "los", "sight", "2":
 			fogType = 2
 		default:
-			ctx.Reply("无效选项。可选: off, basic, los")
+			ctx.Reply(ctx.T("msg.invalid_fog"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		ctx.Room.FogOfWar = fogType
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("战争迷雾已设为: %s", fogTypeText(fogType)))
+		locale := i18n.LangEN
+		if s, ok := ctx.Sender.(*Session); ok {
+			locale = s.Locale()
+		}
+		ctx.Room.broadcastSystemKey("msg.fog_set", fogTypeText(locale, fogType))
 		if s, ok := ctx.Sender.(*Session); ok {
 			ctx.Room.broadcastServerInfo(s.server)
 		}
 	})
 
-	reg.Register("nukes", "设置核弹开关 (用法: /nukes <true|false>)", true, func(ctx *CommandContext) {
+	reg.Register("nukes", "cmd.nukes.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /nukes <true|false>")
+			ctx.Reply(ctx.T("msg.usage.nukes"))
 			return
 		}
 		val, err := parseBool(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("请输入 true 或 false。")
+			ctx.Reply(ctx.T("msg.invalid_bool"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		ctx.Room.DisableNuke = !val
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("核弹已%s", boolText(val)))
+		locale := i18n.LangEN
+		if s, ok := ctx.Sender.(*Session); ok {
+			locale = s.Locale()
+		}
+		ctx.Room.broadcastSystemKey("msg.nukes_set", boolText(locale, val))
 		if s, ok := ctx.Sender.(*Session); ok {
 			ctx.Room.broadcastServerInfo(s.server)
 		}
 	})
 
-	reg.Register("startingunits", "设置初始单位数 (用法: /startingunits <数量>)", true, func(ctx *CommandContext) {
+	reg.Register("startingunits", "cmd.startingunits.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /startingunits <数量>")
+			ctx.Reply(ctx.T("msg.usage.startingunits"))
 			return
 		}
 		val, err := strconv.Atoi(ctx.Args[0])
 		if err != nil || val < 0 {
-			ctx.Reply("请输入有效的非负整数。")
+			ctx.Reply(ctx.T("msg.invalid_nonneg_int"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		ctx.Room.StartingUnits = int32(val)
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("初始单位数已设为: %d", val))
+		ctx.Room.broadcastSystemKey("msg.startingunits_set", val)
 		if s, ok := ctx.Sender.(*Session); ok {
 			ctx.Room.broadcastServerInfo(s.server)
 		}
 	})
 
-	reg.Register("maxunits", "设置每玩家最大单位数 (用法: /maxunits <数量>)", true, func(ctx *CommandContext) {
+	reg.Register("maxunits", "cmd.maxunits.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /maxunits <数量>")
+			ctx.Reply(ctx.T("msg.usage.maxunits"))
 			return
 		}
 		val, err := strconv.Atoi(ctx.Args[0])
 		if err != nil || val < 1 {
-			ctx.Reply("请输入有效的正整数。")
+			ctx.Reply(ctx.T("msg.invalid_pos_int"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		ctx.Room.MaxUnits = val
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("最大单位数已设为: %d", val))
+		ctx.Room.broadcastSystemKey("msg.maxunits_set", val)
 		ctx.Room.broadcastTeamList()
 		if s, ok := ctx.Sender.(*Session); ok {
 			ctx.Room.broadcastServerInfo(s.server)
 		}
 	})
 
-	reg.Register("share", "开关共享控制 (用法: /share <true|false>)", true, func(ctx *CommandContext) {
+	reg.Register("share", "cmd.share.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /share <true|false>")
+			ctx.Reply(ctx.T("msg.usage.share"))
 			return
 		}
 		val, err := parseBool(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("请输入 true 或 false。")
+			ctx.Reply(ctx.T("msg.invalid_bool"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		ctx.Room.SharedControl = val
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("共享控制已%s", boolText(val)))
+		locale := i18n.LangEN
+		if s, ok := ctx.Sender.(*Session); ok {
+			locale = s.Locale()
+		}
+		ctx.Room.broadcastSystemKey("msg.share_set", boolText(locale, val))
 		if s, ok := ctx.Sender.(*Session); ok {
 			ctx.Room.broadcastServerInfo(s.server)
 		}
@@ -382,37 +417,37 @@ func DefaultRegistry() *CommandRegistry {
 
 	// --- Team/slot management ---
 
-	reg.Register("team", "设置玩家队伍 (用法: /team <玩家> <队伍号>)", true, func(ctx *CommandContext) {
+	reg.Register("team", "cmd.team.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) < 2 {
-			ctx.Reply("用法: /team <玩家名或#槽位> <队伍号>")
+			ctx.Reply(ctx.T("msg.usage.team"))
 			return
 		}
 		target, err := ctx.Room.FindTarget(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		teamNum, err := strconv.Atoi(ctx.Args[1])
 		if err != nil {
-			ctx.Reply("请输入有效的队伍号。")
+			ctx.Reply(ctx.T("msg.invalid_team_num"))
 			return
 		}
 		ctx.Room.mu.Lock()
 		target.team = int32(teamNum)
 		ctx.Room.mu.Unlock()
 
-		ctx.Room.broadcastSystem(fmt.Sprintf("%s 的队伍已设为 %d", target.Name(), teamNum))
+		ctx.Room.broadcastSystemKey("msg.team_set", target.Name(), teamNum)
 		_ = ctx.Room.broadcastTeamList()
 	})
 
-	reg.Register("self_team", "设置自己的队伍 (用法: /self_team <队伍号>)", false, func(ctx *CommandContext) {
+	reg.Register("self_team", "cmd.self_team.desc", false, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /self_team <队伍号>")
+			ctx.Reply(ctx.T("msg.usage.self_team"))
 			return
 		}
 		teamNum, err := strconv.Atoi(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("请输入有效的队伍号。")
+			ctx.Reply(ctx.T("msg.invalid_team_num"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
@@ -420,24 +455,24 @@ func DefaultRegistry() *CommandRegistry {
 			s.team = int32(teamNum)
 			ctx.Room.mu.Unlock()
 
-			ctx.Room.broadcastSystem(fmt.Sprintf("%s 的队伍已设为 %d", s.Name(), teamNum))
+			ctx.Room.broadcastSystemKey("msg.team_set", s.Name(), teamNum)
 			_ = ctx.Room.broadcastTeamList()
 		}
 	})
 
-	reg.Register("move", "移动玩家到指定槽位 (用法: /move <玩家> <槽位>)", true, func(ctx *CommandContext) {
+	reg.Register("move", "cmd.move.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) < 2 {
-			ctx.Reply("用法: /move <玩家名或#槽位> <目标槽位>")
+			ctx.Reply(ctx.T("msg.usage.move"))
 			return
 		}
 		target, err := ctx.Room.FindTarget(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		newSlot, err := strconv.Atoi(ctx.Args[1])
 		if err != nil || newSlot < 0 || newSlot >= ctx.Room.MaxPlayers {
-			ctx.Reply(fmt.Sprintf("无效槽位，有效范围: 0-%d", ctx.Room.MaxPlayers-1))
+			ctx.Reply(ctx.T("msg.invalid_slot", ctx.Room.MaxPlayers-1))
 			return
 		}
 
@@ -453,11 +488,11 @@ func DefaultRegistry() *CommandRegistry {
 			}
 		}
 		if oldSlot == -1 {
-			ctx.Reply("未找到该玩家。")
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		if oldSlot == newSlot {
-			ctx.Reply("玩家已在该槽位。")
+			ctx.Reply(ctx.T("msg.already_in_slot"))
 			return
 		}
 
@@ -471,17 +506,17 @@ func DefaultRegistry() *CommandRegistry {
 		target.setRoom(ctx.Room, newSlot)
 
 		_ = ctx.Room.broadcastTeamList()
-		ctx.Room.broadcastSystem(fmt.Sprintf("%s 已移动到槽位 %d", target.Name(), newSlot))
+		ctx.Room.broadcastSystemKey("msg.player_moved", target.Name(), newSlot)
 	})
 
-	reg.Register("self_move", "移动自己到指定槽位 (用法: /self_move <槽位>)", false, func(ctx *CommandContext) {
+	reg.Register("self_move", "cmd.self_move.desc", false, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /self_move <目标槽位>")
+			ctx.Reply(ctx.T("msg.usage.self_move"))
 			return
 		}
 		newSlot, err := strconv.Atoi(ctx.Args[0])
 		if err != nil || newSlot < 0 || newSlot >= ctx.Room.MaxPlayers {
-			ctx.Reply(fmt.Sprintf("无效槽位，有效范围: 0-%d", ctx.Room.MaxPlayers-1))
+			ctx.Reply(ctx.T("msg.invalid_slot", ctx.Room.MaxPlayers-1))
 			return
 		}
 
@@ -497,11 +532,11 @@ func DefaultRegistry() *CommandRegistry {
 				}
 			}
 			if oldSlot == -1 {
-				ctx.Reply("未找到自己。")
+				ctx.Reply(ctx.T("msg.self_not_found"))
 				return
 			}
 			if oldSlot == newSlot {
-				ctx.Reply("你已在该槽位。")
+				ctx.Reply(ctx.T("msg.already_in_slot_you"))
 				return
 			}
 
@@ -514,53 +549,53 @@ func DefaultRegistry() *CommandRegistry {
 			s.setRoom(ctx.Room, newSlot)
 
 			_ = ctx.Room.broadcastTeamList()
-			ctx.Room.broadcastSystem(fmt.Sprintf("%s 已移动到槽位 %d", s.Name(), newSlot))
+			ctx.Room.broadcastSystemKey("msg.player_moved", s.Name(), newSlot)
 		}
 	})
 
 	// --- Game control ---
 
-	reg.Register("kick", "踢出玩家 (用法: /kick <玩家名或#槽位>)", true, func(ctx *CommandContext) {
+	reg.Register("kick", "cmd.kick.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /kick <玩家名或#槽位>")
+			ctx.Reply(ctx.T("msg.usage.kick"))
 			return
 		}
 		target, err := ctx.Room.FindTarget(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
 			err = ctx.Room.Kick(s, target)
 			if err != nil {
-				ctx.Reply("踢出失败: " + err.Error())
+				ctx.Reply(ctx.T("msg.kick_failed", err.Error()))
 			}
 		}
 	})
 
-	reg.Register("transfer", "转让房主 (用法: /transfer <玩家名或#槽位>)", false, func(ctx *CommandContext) {
+	reg.Register("transfer", "cmd.transfer.desc", false, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /transfer <玩家名或#槽位>")
+			ctx.Reply(ctx.T("msg.usage.transfer"))
 			return
 		}
 		target, err := ctx.Room.FindTarget(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
 			err = ctx.Room.TransferOwnership(s, target)
 			if err != nil {
-				ctx.Reply("转移失败: " + err.Error())
+				ctx.Reply(ctx.T("msg.transfer_failed", err.Error()))
 			} else {
-				ctx.Room.broadcastSystem(fmt.Sprintf("房主已转移给 %s", target.Name()))
+				ctx.Room.broadcastSystemKey("msg.transfer_success", target.Name())
 			}
 		}
 	})
 
-	reg.Register("start", "投票开始游戏 (管理员可直接开始)", false, func(ctx *CommandContext) {
+	reg.Register("start", "cmd.start.desc", false, func(ctx *CommandContext) {
 		if ctx.Room.IsInGame() {
-			ctx.Reply("游戏已经在运行中。")
+			ctx.Reply(ctx.T("msg.game_already_running"))
 			return
 		}
 
@@ -571,7 +606,7 @@ func DefaultRegistry() *CommandRegistry {
 
 		// Admin can force start
 		if ctx.Room.IsAdmin(s) {
-			ctx.Room.broadcastSystem(fmt.Sprintf("管理员 %s 直接开始游戏。", s.Name()))
+			ctx.Room.broadcastSystemKey("msg.admin_started", s.Name())
 			_ = s.handleStartGame(protocol.Packet{})
 			return
 		}
@@ -587,33 +622,33 @@ func DefaultRegistry() *CommandRegistry {
 
 		required := (totalHumans + 1) / 2
 		if votes >= required {
-			ctx.Room.broadcastSystem(fmt.Sprintf("投票通过 (%d/%d)，游戏立即开始！", votes, required))
+			ctx.Room.broadcastSystemKey("msg.start_vote_passed", votes, required)
 			_ = s.handleStartGame(protocol.Packet{})
 		} else {
-			ctx.Room.broadcastSystem(fmt.Sprintf("%s 投票开始游戏 (%d/%d)", s.Name(), votes, required))
+			ctx.Room.broadcastSystemKey("msg.start_vote_cast", s.Name(), votes, required)
 		}
 	})
 
-	reg.Register("return", "返回大厅 (管理员)", true, func(ctx *CommandContext) {
+	reg.Register("return", "cmd.return.desc", true, func(ctx *CommandContext) {
 		if !ctx.Room.IsInGame() {
-			ctx.Reply("当前不在游戏中。")
+			ctx.Reply(ctx.T("msg.not_in_game"))
 			return
 		}
 		ctx.Room.SetInGame(false)
 		ctx.Room.broadcast(protocol.EncodeReturnToBattleroom())
-		ctx.Room.broadcastSystem("管理员已结束游戏，返回大厅。")
+		ctx.Room.broadcastSystemKey("msg.return_by_admin")
 		_ = ctx.Room.broadcastTeamList()
 	})
 
-	reg.Register("admin", "管理管理员 (用法: /admin <add|remove> <玩家>)", false, func(ctx *CommandContext) {
+	reg.Register("admin", "cmd.admin.desc", false, func(ctx *CommandContext) {
 		if len(ctx.Args) < 2 {
-			ctx.Reply("用法: /admin <add|remove> <玩家名或#槽位>")
+			ctx.Reply(ctx.T("msg.usage.admin"))
 			return
 		}
 		action := strings.ToLower(ctx.Args[0])
 		target, err := ctx.Room.FindTarget(ctx.Args[1])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
@@ -621,94 +656,94 @@ func DefaultRegistry() *CommandRegistry {
 			case "add":
 				err = ctx.Room.SetAdmin(s, target, true)
 				if err != nil {
-					ctx.Reply("失败: " + err.Error())
+					ctx.Reply(ctx.T("msg.action_failed", err.Error()))
 				} else {
-					ctx.Room.broadcastSystem(fmt.Sprintf("%s 已被设为管理员。", target.Name()))
+					ctx.Room.broadcastSystemKey("msg.admin_added", target.Name())
 				}
 			case "remove":
 				err = ctx.Room.SetAdmin(s, target, false)
 				if err != nil {
-					ctx.Reply("失败: " + err.Error())
+					ctx.Reply(ctx.T("msg.action_failed", err.Error()))
 				} else {
-					ctx.Room.broadcastSystem(fmt.Sprintf("%s 已被移除管理员。", target.Name()))
+					ctx.Room.broadcastSystemKey("msg.admin_removed", target.Name())
 				}
 			default:
-				ctx.Reply("用法: /admin <add|remove> <玩家>")
+				ctx.Reply(ctx.T("msg.usage.admin"))
 			}
 		}
 	})
 
-	reg.Register("mute", "禁言玩家 (用法: /mute <玩家名或#槽位>)", true, func(ctx *CommandContext) {
+	reg.Register("mute", "cmd.mute.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /mute <玩家名或#槽位>")
+			ctx.Reply(ctx.T("msg.usage.mute"))
 			return
 		}
 		target, err := ctx.Room.FindTarget(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
 			err = ctx.Room.Mute(s, target)
 			if err != nil {
-				ctx.Reply("禁言失败: " + err.Error())
+				ctx.Reply(ctx.T("msg.mute_failed", err.Error()))
 			} else {
-				ctx.Room.broadcastSystem(fmt.Sprintf("%s 已被禁言。", target.Name()))
+				ctx.Room.broadcastSystemKey("msg.muted", target.Name())
 			}
 		}
 	})
 
-	reg.Register("unmute", "解除禁言 (用法: /unmute <玩家名或#槽位>)", true, func(ctx *CommandContext) {
+	reg.Register("unmute", "cmd.unmute.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /unmute <玩家名或#槽位>")
+			ctx.Reply(ctx.T("msg.usage.unmute"))
 			return
 		}
 		target, err := ctx.Room.FindTarget(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
 			err = ctx.Room.Unmute(s, target)
 			if err != nil {
-				ctx.Reply("解除禁言失败: " + err.Error())
+				ctx.Reply(ctx.T("msg.unmute_failed", err.Error()))
 			} else {
-				ctx.Room.broadcastSystem(fmt.Sprintf("%s 已解除禁言。", target.Name()))
+				ctx.Room.broadcastSystemKey("msg.unmuted", target.Name())
 			}
 		}
 	})
 
-	reg.Register("pause", "暂停游戏 (管理员)", true, func(ctx *CommandContext) {
+	reg.Register("pause", "cmd.pause.desc", true, func(ctx *CommandContext) {
 		if !ctx.Room.IsInGame() {
-			ctx.Reply("当前不在游戏中。")
+			ctx.Reply(ctx.T("msg.not_in_game"))
 			return
 		}
 		if ctx.Room.IsPaused() {
-			ctx.Reply("游戏已经暂停。")
+			ctx.Reply(ctx.T("msg.already_paused"))
 			return
 		}
 		ctx.Room.SetPaused(true)
-		ctx.Room.broadcastSystem(fmt.Sprintf("游戏已由 %s 暂停。", ctx.Sender.Name()))
+		ctx.Room.broadcastSystemKey("msg.game_paused", ctx.Sender.Name())
 	})
 
-	reg.Register("unpause", "恢复游戏 (管理员)", true, func(ctx *CommandContext) {
+	reg.Register("unpause", "cmd.unpause.desc", true, func(ctx *CommandContext) {
 		if !ctx.Room.IsInGame() {
-			ctx.Reply("当前不在游戏中。")
+			ctx.Reply(ctx.T("msg.not_in_game"))
 			return
 		}
 		if !ctx.Room.IsPaused() {
-			ctx.Reply("游戏未暂停。")
+			ctx.Reply(ctx.T("msg.not_paused"))
 			return
 		}
 		ctx.Room.SetPaused(false)
-		ctx.Room.broadcastSystem(fmt.Sprintf("游戏已由 %s 恢复。", ctx.Sender.Name()))
+		ctx.Room.broadcastSystemKey("msg.game_resumed", ctx.Sender.Name())
 	})
 
 	// --- Vote commands ---
 
-	reg.Register("sync", "发起同步投票", false, func(ctx *CommandContext) {
+	reg.Register("sync", "cmd.sync.desc", false, func(ctx *CommandContext) {
 		if !ctx.Room.IsInGame() {
-			ctx.Reply("当前不在游戏中。")
+			ctx.Reply(ctx.T("msg.not_in_game"))
 			return
 		}
 
@@ -719,7 +754,7 @@ func DefaultRegistry() *CommandRegistry {
 
 		// Admin can force sync
 		if ctx.Room.IsAdmin(s) {
-			ctx.Room.broadcastSystem(fmt.Sprintf("管理员 %s 发起同步。", s.Name()))
+			ctx.Room.broadcastSystemKey("msg.admin_sync", s.Name())
 			go ctx.Room.TriggerSync(s.server)
 			return
 		}
@@ -729,17 +764,17 @@ func DefaultRegistry() *CommandRegistry {
 			// Cast vote
 			votes, ok := ctx.Room.CastVote("sync", s.playerID)
 			if !ok {
-				ctx.Reply("投票已过期。")
+				ctx.Reply(ctx.T("msg.vote_expired"))
 				return
 			}
 			totalHumans := ctx.Room.HumanCountLocked()
 			required := (totalHumans + 1) / 2
 			if votes >= required {
 				ctx.Room.ClearVote()
-				ctx.Room.broadcastSystem(fmt.Sprintf("同步投票通过 (%d/%d)！", votes, required))
+				ctx.Room.broadcastSystemKey("msg.sync_vote_passed", votes, required)
 				go ctx.Room.TriggerSync(s.server)
 			} else {
-				ctx.Room.broadcastSystem(fmt.Sprintf("%s 赞成同步 (%d/%d)", s.Name(), votes, required))
+				ctx.Room.broadcastSystemKey("msg.sync_vote_cast", s.Name(), votes, required)
 			}
 			return
 		}
@@ -750,16 +785,16 @@ func DefaultRegistry() *CommandRegistry {
 		required := (totalHumans + 1) / 2
 		if 1 >= required {
 			ctx.Room.ClearVote()
-			ctx.Room.broadcastSystem("同步投票通过！")
+			ctx.Room.broadcastSystemKey("msg.sync_vote_single")
 			go ctx.Room.TriggerSync(s.server)
 		} else {
-			ctx.Room.broadcastSystem(fmt.Sprintf("%s 发起同步投票 (1/%d)", s.Name(), required))
+			ctx.Room.broadcastSystemKey("msg.sync_vote_started", s.Name(), required)
 		}
 	})
 
-	reg.Register("gameover", "发起结束游戏投票", false, func(ctx *CommandContext) {
+	reg.Register("gameover", "cmd.gameover.desc", false, func(ctx *CommandContext) {
 		if !ctx.Room.IsInGame() {
-			ctx.Reply("当前不在游戏中。")
+			ctx.Reply(ctx.T("msg.not_in_game"))
 			return
 		}
 
@@ -772,7 +807,7 @@ func DefaultRegistry() *CommandRegistry {
 		if ctx.Room.IsAdmin(s) {
 			ctx.Room.SetInGame(false)
 			ctx.Room.broadcast(protocol.EncodeReturnToBattleroom())
-			ctx.Room.broadcastSystem(fmt.Sprintf("管理员 %s 结束了游戏。", s.Name()))
+			ctx.Room.broadcastSystemKey("msg.admin_gameover", s.Name())
 			_ = ctx.Room.broadcastTeamList()
 			return
 		}
@@ -782,7 +817,7 @@ func DefaultRegistry() *CommandRegistry {
 			// Cast vote
 			votes, ok := ctx.Room.CastVote("gameover", s.playerID)
 			if !ok {
-				ctx.Reply("投票已过期。")
+				ctx.Reply(ctx.T("msg.vote_expired"))
 				return
 			}
 			totalHumans := ctx.Room.HumanCountLocked()
@@ -791,10 +826,10 @@ func DefaultRegistry() *CommandRegistry {
 				ctx.Room.ClearVote()
 				ctx.Room.SetInGame(false)
 				ctx.Room.broadcast(protocol.EncodeReturnToBattleroom())
-				ctx.Room.broadcastSystem(fmt.Sprintf("结束游戏投票通过 (%d/%d)！", votes, required))
+				ctx.Room.broadcastSystemKey("msg.gameover_vote_passed", votes, required)
 				_ = ctx.Room.broadcastTeamList()
 			} else {
-				ctx.Room.broadcastSystem(fmt.Sprintf("%s 赞成结束游戏 (%d/%d)", s.Name(), votes, required))
+				ctx.Room.broadcastSystemKey("msg.gameover_vote_cast", s.Name(), votes, required)
 			}
 			return
 		}
@@ -807,58 +842,58 @@ func DefaultRegistry() *CommandRegistry {
 			ctx.Room.ClearVote()
 			ctx.Room.SetInGame(false)
 			ctx.Room.broadcast(protocol.EncodeReturnToBattleroom())
-			ctx.Room.broadcastSystem("结束游戏投票通过！")
+			ctx.Room.broadcastSystemKey("msg.gameover_vote_single")
 			_ = ctx.Room.broadcastTeamList()
 		} else {
-			ctx.Room.broadcastSystem(fmt.Sprintf("%s 发起结束游戏投票 (1/%d)", s.Name(), required))
+			ctx.Room.broadcastSystemKey("msg.gameover_vote_started", s.Name(), required)
 		}
 	})
 
 	// --- Ban commands ---
 
-	reg.Register("ban", "封禁玩家 (用法: /ban <玩家名或#槽位>)", true, func(ctx *CommandContext) {
+	reg.Register("ban", "cmd.ban.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /ban <玩家名或#槽位>")
+			ctx.Reply(ctx.T("msg.usage.ban"))
 			return
 		}
 		target, err := ctx.Room.FindTarget(ctx.Args[0])
 		if err != nil {
-			ctx.Reply("错误: " + err.Error())
+			ctx.Reply(ctx.T("msg.player_not_found"))
 			return
 		}
 		if s, ok := ctx.Sender.(*Session); ok {
 			if !ctx.Room.IsAdmin(s) {
-				ctx.Reply("需要管理员权限。")
+				ctx.Reply(ctx.T("msg.admin_required"))
 				return
 			}
 			ctx.Room.BanPlayer(target.playerID)
-			ctx.Room.broadcastSystem(fmt.Sprintf("%s 已被封禁。", target.Name()))
+			ctx.Room.broadcastSystemKey("msg.banned", target.Name())
 			// Kick the banned player
-			_ = target.Send(protocol.EncodeKick("你已被封禁。"))
+			_ = target.Send(protocol.EncodeKick(target.T("msg.banned", target.Name())))
 			target.close()
 		}
 	})
 
-	reg.Register("unban", "解封玩家 (用法: /unban <玩家ID>)", true, func(ctx *CommandContext) {
+	reg.Register("unban", "cmd.unban.desc", true, func(ctx *CommandContext) {
 		if len(ctx.Args) == 0 {
-			ctx.Reply("用法: /unban <玩家ID>")
+			ctx.Reply(ctx.T("msg.usage.unban"))
 			return
 		}
 		playerID := ctx.Args[0]
 		if !ctx.Room.IsBanned(playerID) {
-			ctx.Reply("该玩家未被封禁。")
+			ctx.Reply(ctx.T("msg.not_banned"))
 			return
 		}
 		ctx.Room.UnbanPlayer(playerID)
-		ctx.Room.broadcastSystem(fmt.Sprintf("玩家 %s 已被解封。", playerID))
+		ctx.Room.broadcastSystemKey("msg.unbanned", playerID)
 	})
 
 	// --- HA Authentication commands ---
 
 	// /login - Verify HA credentials and link proxy account (CBH stays 0)
-	reg.Register("login", "登录 HA 账号 (用法: /login <邮箱/用户名> <密码>)", false, func(ctx *CommandContext) {
+	reg.Register("login", "cmd.login.desc", false, func(ctx *CommandContext) {
 		if len(ctx.Args) < 2 {
-			ctx.Reply("用法: /login <邮箱/用户名> <密码>")
+			ctx.Reply(ctx.T("msg.login_usage"))
 			return
 		}
 
@@ -868,12 +903,12 @@ func DefaultRegistry() *CommandRegistry {
 		}
 
 		if s.server.auth == nil {
-			ctx.Reply("认证服务未配置。")
+			ctx.Reply(ctx.T("msg.ha_not_configured"))
 			return
 		}
 
 		if s.authenticated {
-			ctx.Reply("你已经认证过了。")
+			ctx.Reply(ctx.T("msg.already_authenticated"))
 			return
 		}
 
@@ -883,18 +918,18 @@ func DefaultRegistry() *CommandRegistry {
 		// Verify credentials against HA core API
 		user, err := s.server.auth.VerifyCredentials(identifier, password)
 		if err != nil {
-			ctx.Reply("认证失败: 服务不可用。")
+			ctx.Reply(ctx.T("msg.auth_failed_service"))
 			s.server.logger.Printf("HA login error for %s: %v", s.name, err)
 			return
 		}
 		if user == nil {
-			ctx.Reply("认证失败: 用户名或密码错误。")
+			ctx.Reply(ctx.T("msg.auth_failed_creds"))
 			return
 		}
 
 		// Claim binding: link HA user UUID and flip CBH 0→1
 		if err := s.server.db.ClaimBinding(s.playerID, user.UUID); err != nil {
-			ctx.Reply("绑定失败: " + err.Error())
+			ctx.Reply(ctx.T("msg.claim_bind_failed", err.Error()))
 			return
 		}
 
@@ -908,15 +943,15 @@ func DefaultRegistry() *CommandRegistry {
 		s.haUserUUID = user.UUID
 		s.authenticated = true
 
-		ctx.Reply(fmt.Sprintf("认证成功！欢迎, %s", user.Username))
-		ctx.Room.broadcastSystem(fmt.Sprintf("%s 已通过 HA 认证", s.name))
+		ctx.Reply(ctx.T("msg.auth_success", user.Username))
+		ctx.Room.broadcastSystemKey("msg.auth_broadcast", s.name)
 		s.server.logger.Printf("HA: %s authenticated as %s (uuid=%s)", s.name, user.Username, user.UUID)
 	})
 
 	// /claim - Claim proxy account by registering in HA (CBH 0→1)
-	reg.Register("claim", "认领账号到 HA (用法: /claim <新密码> <邮箱>)", false, func(ctx *CommandContext) {
+	reg.Register("claim", "cmd.claim.desc", false, func(ctx *CommandContext) {
 		if len(ctx.Args) < 2 {
-			ctx.Reply("用法: /claim <新密码> <邮箱>")
+			ctx.Reply(ctx.T("msg.claim_usage"))
 			return
 		}
 
@@ -926,18 +961,18 @@ func DefaultRegistry() *CommandRegistry {
 		}
 
 		if s.server.auth == nil {
-			ctx.Reply("认证服务未配置。")
+			ctx.Reply(ctx.T("msg.ha_not_configured"))
 			return
 		}
 
 		// Check if already claimed
 		binding, err := s.server.db.GetBindingByGameUUID(s.playerID)
 		if err != nil || binding == nil {
-			ctx.Reply("未找到你的账号记录。")
+			ctx.Reply(ctx.T("msg.claim_not_found"))
 			return
 		}
 		if binding.CBH == 1 {
-			ctx.Reply("你的账号已经被认领过了。")
+			ctx.Reply(ctx.T("msg.claim_already"))
 			return
 		}
 
@@ -945,21 +980,21 @@ func DefaultRegistry() *CommandRegistry {
 		email := ctx.Args[1]
 
 		if len(password) < 6 {
-			ctx.Reply("密码长度至少 6 位。")
+			ctx.Reply(ctx.T("msg.claim_pwd_too_short"))
 			return
 		}
 
 		// Register in HA core
 		result, err := s.server.auth.Register(email, s.name, password)
 		if err != nil {
-			ctx.Reply("注册失败: " + err.Error())
+			ctx.Reply(ctx.T("msg.claim_failed", err.Error()))
 			s.server.logger.Printf("HA claim register error for %s: %v", s.name, err)
 			return
 		}
 
 		// Claim the binding (CBH 0→1)
 		if err := s.server.db.ClaimBinding(s.playerID, result.UUID); err != nil {
-			ctx.Reply("认领失败: " + err.Error())
+			ctx.Reply(ctx.T("msg.claim_bind_failed", err.Error()))
 			return
 		}
 
@@ -972,35 +1007,59 @@ func DefaultRegistry() *CommandRegistry {
 			_ = s.server.rdb.SetAuthenticated(s.playerID, result.UUID, 24*time.Hour)
 		}
 
-		ctx.Reply("认领成功！你的游戏账号已关联到 HA 账号。")
-		ctx.Reply(fmt.Sprintf("邮箱: %s", email))
-		ctx.Reply("请记住你的登录信息！")
-		ctx.Room.broadcastSystem(fmt.Sprintf("%s 已认领 HA 账号", s.name))
+		ctx.Reply(ctx.T("msg.claim_success"))
+		ctx.Reply(ctx.T("msg.claim_email", email))
+		ctx.Reply(ctx.T("msg.claim_remember"))
+		ctx.Room.broadcastSystemKey("msg.claim_broadcast", s.name)
 		s.server.logger.Printf("HA: %s claimed as %s (uuid=%s)", s.name, email, result.UUID)
 	})
 
-	reg.Register("whoami", "显示当前认证状态", false, func(ctx *CommandContext) {
+	reg.Register("whoami", "cmd.whoami.desc", false, func(ctx *CommandContext) {
 		s, ok := ctx.Sender.(*Session)
 		if !ok {
 			return
 		}
 
 		if s.server.auth == nil {
-			ctx.Reply("认证服务未配置。")
+			ctx.Reply(ctx.T("msg.ha_not_configured"))
 			return
 		}
 
 		if s.authenticated {
-			ctx.Reply("状态: 已认证")
-			ctx.Reply(fmt.Sprintf("HA UUID: %s", s.haUserUUID))
+			ctx.Reply(ctx.T("msg.whoami_authenticated"))
+			ctx.Reply(ctx.T("msg.whoami_uuid", s.haUserUUID))
 		} else {
-			ctx.Reply("状态: 未认证 (游客)")
-			ctx.Reply("使用 /login <邮箱> <密码> 登录")
+			ctx.Reply(ctx.T("msg.whoami_guest"))
+			ctx.Reply(ctx.T("msg.whoami_hint"))
 		}
 	})
 
-	reg.Register("version", "显示服务器版本信息", false, func(ctx *CommandContext) {
-		ctx.Reply("MCAGS-RW Server v0.1.0")
+	reg.Register("version", "cmd.version.desc", false, func(ctx *CommandContext) {
+		ctx.Reply(ctx.T("msg.version"))
+	})
+
+	reg.Register("lang", "cmd.lang.desc", false, func(ctx *CommandContext) {
+		if len(ctx.Args) == 0 {
+			ctx.Reply(ctx.T("msg.usage.lang"))
+			return
+		}
+		s, ok := ctx.Sender.(*Session)
+		if !ok {
+			return
+		}
+		newLang := i18n.NormalizeLang(ctx.Args[0])
+		if newLang != i18n.LangEN && newLang != i18n.LangZH {
+			ctx.Reply(ctx.T("msg.usage.lang"))
+			return
+		}
+		s.locale = newLang
+		// Persist to DB
+		if s.server.db != nil {
+			if err := s.server.db.SetLang(s.playerID, newLang); err != nil {
+				s.server.logger.Printf("failed to set lang for %s: %v", s.playerID, err)
+			}
+		}
+		ctx.Reply(s.T("msg.lang_changed"))
 	})
 
 	return reg
@@ -1053,24 +1112,24 @@ func (r *Room) sendServerInfoTo(session *Session, server *Server) error {
 	return session.Send(packet)
 }
 
-func fogTypeText(fog int32) string {
+func fogTypeText(locale string, fog int32) string {
 	switch fog {
 	case 0:
-		return "关闭"
+		return i18n.T(locale, "fog.off")
 	case 1:
-		return "基础"
+		return i18n.T(locale, "fog.basic")
 	case 2:
-		return "视线"
+		return i18n.T(locale, "fog.los")
 	default:
-		return fmt.Sprintf("未知(%d)", fog)
+		return fmt.Sprintf(i18n.T(locale, "fog.unknown"), fog)
 	}
 }
 
-func boolText(val bool) string {
+func boolText(locale string, val bool) string {
 	if val {
-		return "开启"
+		return i18n.T(locale, "bool.on")
 	}
-	return "关闭"
+	return i18n.T(locale, "bool.off")
 }
 
 func parseBool(s string) (bool, error) {

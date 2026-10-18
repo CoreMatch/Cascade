@@ -83,7 +83,7 @@ func Router(rooms *relay.Manager) *gin.Engine {
 		// Kick all players first
 		for _, player := range room.SnapshotPlayers() {
 			if player != nil {
-				_ = player.Send(protocol.EncodeKick("房间已被管理员删除。"))
+				_ = player.Send(protocol.EncodeKick(player.T("msg.kick_room_deleted")))
 				player.Close()
 			}
 		}
@@ -157,7 +157,7 @@ func Router(rooms *relay.Manager) *gin.Engine {
 			return
 		}
 
-		_ = player.Send(protocol.EncodeKick("你已被管理员踢出。"))
+		_ = player.Send(protocol.EncodeKick(player.T("msg.kick_admin")))
 		player.Close()
 		c.JSON(http.StatusOK, gin.H{"message": "player kicked"})
 	})
@@ -183,7 +183,7 @@ func Router(rooms *relay.Manager) *gin.Engine {
 		}
 
 		room.BanPlayer(req.PlayerID)
-		_ = player.Send(protocol.EncodeKick("你已被管理员封禁。"))
+		_ = player.Send(protocol.EncodeKick(player.T("msg.kick_banned_admin")))
 		player.Close()
 		c.JSON(http.StatusOK, gin.H{"message": "player banned"})
 	})

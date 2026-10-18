@@ -1,0 +1,1 @@
+ALTER TABLE player_bindings DROP COLUMN lang;

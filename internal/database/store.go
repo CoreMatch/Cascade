@@ -25,6 +25,13 @@ type Store interface {
 	// SetQuickAuth updates the quick_auth setting for a player binding.
 	SetQuickAuth(gameUUID string, enabled bool) error
 
+	// GetLang returns the language preference for a player binding.
+	// Returns "en" if not found.
+	GetLang(gameUUID string) (string, error)
+
+	// SetLang updates the language preference for a player binding.
+	SetLang(gameUUID, lang string) error
+
 	// CleanupStaleProxyBindings deletes proxy bindings (CBH=0) that haven't logged in for 30 days.
 	CleanupStaleProxyBindings() (int64, error)
 
@@ -51,6 +58,7 @@ type PlayerBinding struct {
 	GameUUID   string     `gorm:"uniqueIndex;not null;size:255"`
 	HAUserUUID string     `gorm:"index;not null;default:'';size:255"`
 	PlayerName string     `gorm:"not null;default:'';size:255"`
+	Lang       string     `gorm:"not null;default:'en';size:10"`
 	CBH        int        `gorm:"not null;default:0;index"`
 	QuickAuth  bool       `gorm:"not null;default:true"`
 	LastLogin  time.Time  `gorm:"not null;autoCreateTime"`

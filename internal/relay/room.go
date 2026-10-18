@@ -14,6 +14,7 @@ import (
 
 	"rwgin/internal/config"
 	"rwgin/internal/game/mod"
+	"rwgin/internal/i18n"
 	"rwgin/internal/protocol"
 )
 
@@ -982,7 +983,7 @@ func (r *Room) Kick(actor, target *Session) error {
 		return fmt.Errorf("only owner can kick another admin")
 	}
 
-	reason := fmt.Sprintf("你已被 %s 移出房间。", actor.Name())
+	reason := target.T("msg.kick_reason", actor.Name())
 	_ = target.Send(protocol.EncodeKick(reason))
 	target.close()
 	return nil
@@ -1251,20 +1252,20 @@ func (r *Room) FindTarget(input string) (*Session, error) {
 	return exact, nil
 }
 
-func (r *Room) MembersText() string {
+func (r *Room) MembersText(locale string) string {
 	detail := r.Detail()
 	if len(detail.Members) == 0 {
-		return "当前房间为空"
+		return i18n.T(locale, "room.empty")
 	}
 	lines := make([]string, 0, len(detail.Members))
 	for _, member := range detail.Members {
-		role := "player"
+		role := i18n.T(locale, "role.player")
 		if member.IsAI {
-			role = "ai"
+			role = i18n.T(locale, "role.ai")
 		} else if member.IsOwner {
-			role = "owner"
+			role = i18n.T(locale, "role.owner")
 		} else if member.IsAdmin {
-			role = "admin"
+			role = i18n.T(locale, "role.admin")
 		}
 		lines = append(lines, fmt.Sprintf("[%d] %s (%s)", member.Slot, member.Name, role))
 	}
@@ -1285,11 +1286,22 @@ func (r *Room) broadcastSystem(message string) {
 	r.broadcast(packet)
 }
 
+// broadcastSystemKey sends a translated system message to each player in their own locale.
+func (r *Room) broadcastSystemKey(key string, args ...any) {
+	for _, player := range r.SnapshotPlayers() {
+		if player == nil {
+			continue
+		}
+		msg := i18n.T(player.Locale(), key, args...)
+		_ = player.systemMessage(msg)
+	}
+}
+
 func (r *Room) handleChat(sender Identity, message string) {
 	// Check if the sender is muted (commands still work for muted players)
 	if s, ok := sender.(*Session); ok {
 		if r.IsMuted(s.playerID) && !strings.HasPrefix(message, r.commands.prefix) {
-			_ = s.systemMessage("你已被禁言，无法发送消息。")
+			_ = s.systemMessage(s.T("msg.muted_chat"))
 			return
 		}
 	}

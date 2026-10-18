@@ -169,6 +169,30 @@ func (s *GORMStore) SetQuickAuth(gameUUID string, enabled bool) error {
 	return result.Error
 }
 
+// GetLang returns the language preference for a player binding.
+func (s *GORMStore) GetLang(gameUUID string) (string, error) {
+	var binding PlayerBinding
+	err := s.db.Select("lang").Where("game_uuid = ?", gameUUID).First(&binding).Error
+	if err == gorm.ErrRecordNotFound {
+		return "en", nil
+	}
+	if err != nil {
+		return "en", err
+	}
+	if binding.Lang == "" {
+		return "en", nil
+	}
+	return binding.Lang, nil
+}
+
+// SetLang updates the language preference for a player binding.
+func (s *GORMStore) SetLang(gameUUID, lang string) error {
+	result := s.db.Model(&PlayerBinding{}).
+		Where("game_uuid = ?", gameUUID).
+		Update("lang", lang)
+	return result.Error
+}
+
 // CleanupStaleProxyBindings deletes proxy bindings (CBH=0) that haven't logged in for 30 days.
 func (s *GORMStore) CleanupStaleProxyBindings() (int64, error) {
 	cutoff := time.Now().AddDate(0, 0, -30)

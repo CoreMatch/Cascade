@@ -16,6 +16,7 @@ import (
 	"rwgin/internal/auth"
 	"rwgin/internal/config"
 	"rwgin/internal/database"
+	"rwgin/internal/i18n"
 	"rwgin/internal/protocol"
 	"rwgin/internal/redis"
 )
@@ -129,6 +130,9 @@ type Session struct {
 	// HA authentication state
 	haUserUUID    string // HA core user UUID (empty if not authenticated)
 	authenticated bool   // true if HA credentials verified via /login
+
+	// Language preference
+	locale string // "en" or "zh", loaded from DB
 
 	roomMu sync.RWMutex
 	room   *Room
@@ -336,6 +340,14 @@ func (s *Session) handleRegister(body []byte) error {
 		if err := s.server.db.CreateProxyBinding(s.playerID, s.name); err != nil {
 			s.server.logger.Printf("HA: failed to create proxy binding for %s: %v", s.name, err)
 		}
+		// Load language preference from DB
+		if lang, err := s.server.db.GetLang(s.playerID); err == nil {
+			s.locale = lang
+		} else {
+			s.locale = i18n.LangEN
+		}
+	} else {
+		s.locale = i18n.LangEN
 	}
 
 	// Try to restore HA authentication state (from Redis)
@@ -360,7 +372,7 @@ func (s *Session) handlePowReceive(body []byte) error {
 	}
 
 	s.state.Store(int32(stateAwaitRoomCode))
-	promptPacket, promptErr := protocol.EncodePrompt("请输入房间号，留空会自动创建新房间。")
+	promptPacket, promptErr := protocol.EncodePrompt(s.T("msg.enter_room_prompt"))
 	if promptErr != nil {
 		return promptErr
 	}
@@ -395,7 +407,7 @@ func (s *Session) handleChat(body []byte) error {
 
 	// Check chat rate limit
 	if !s.checkChatRateLimit() {
-		_ = s.systemMessage("消息发送过快，请稍后再试。")
+		_ = s.systemMessage(s.T("msg.rate_limit"))
 		return nil
 	}
 
@@ -441,11 +453,11 @@ func (s *Session) handleStartGame(packet protocol.Packet) error {
 	}
 
 	if !room.IsOwner(s) {
-		return s.systemMessage("只有房主可以开始游戏。")
+		return s.systemMessage(s.T("msg.only_owner_start"))
 	}
 
 	room.SetInGame(true)
-	room.broadcastSystem(fmt.Sprintf("游戏已由 %s 开始。", s.name))
+	room.broadcastSystemKey("msg.game_started_by", s.name)
 
 	mapName := room.MapName
 	mapPath := filepath.Join(s.server.cfg.MapsDir, mapName)
@@ -503,7 +515,7 @@ func (s *Session) joinRoom(code string) error {
 
 	// Check if player is banned
 	if room.IsBanned(s.playerID) {
-		_ = s.Send(protocol.EncodeKick("你已被封禁，无法加入此房间。"))
+		_ = s.Send(protocol.EncodeKick(s.T("msg.kick_banned")))
 		room.Leave(s)
 		return fmt.Errorf("player is banned")
 	}
@@ -535,8 +547,8 @@ func (s *Session) joinRoom(code string) error {
 
 		// If game is in progress, send start game packet and trigger sync
 		if room.IsInGame() {
-			_ = s.systemMessage("正在重新连接到游戏...")
-			room.broadcastSystem(fmt.Sprintf("%s 已重连。", s.name))
+			_ = s.systemMessage(s.T("msg.reconnecting"))
+			room.broadcastSystemKey("msg.reconnected", s.name)
 
 			// Send start game packet so client enters game state
 			startGamePacket := protocol.EncodeStartGame(room.MapName, nil, false)
@@ -545,9 +557,9 @@ func (s *Session) joinRoom(code string) error {
 			// Trigger sync to get the reconnecting player up to date
 			go room.TriggerSync(s.server)
 		} else {
-			_ = s.systemMessage(fmt.Sprintf("欢迎回到房间 %s!", room.Code))
-			_ = s.systemMessage(room.commands.PlayerHelpText())
-			room.broadcastSystem(fmt.Sprintf("%s 已重连。", s.name))
+			_ = s.systemMessage(s.T("msg.welcome_back", room.Code))
+			_ = s.systemMessage(room.commands.PlayerHelpText(s.Locale()))
+			room.broadcastSystemKey("msg.reconnected", s.name)
 		}
 
 		s.state.Store(int32(stateActive))
@@ -565,9 +577,9 @@ func (s *Session) joinRoom(code string) error {
 	}
 
 	// Send welcome message
-	_ = s.systemMessage(fmt.Sprintf("欢迎 %s 加入房间 %s!", s.name, room.Code))
-	_ = s.systemMessage(room.commands.PlayerHelpText())
-	room.broadcastSystem(fmt.Sprintf("%s 加入了房间。", s.name))
+	_ = s.systemMessage(s.T("msg.welcome_room", s.name, room.Code))
+	_ = s.systemMessage(room.commands.PlayerHelpText(s.Locale()))
+	room.broadcastSystemKey("msg.joined", s.name)
 
 	s.state.Store(int32(stateActive))
 	return nil
@@ -660,6 +672,19 @@ func (s *Session) systemMessage(message string) error {
 		return err
 	}
 	return s.Send(packet)
+}
+
+// T returns a translated message for this session's locale.
+func (s *Session) T(key string, args ...any) string {
+	return i18n.T(s.locale, key, args...)
+}
+
+// Locale returns the session's current locale.
+func (s *Session) Locale() string {
+	if s.locale == "" {
+		return i18n.LangEN
+	}
+	return s.locale
 }
 
 // restoreHABinding restores HA authentication state from Redis + database (for reconnection).
