@@ -30,7 +30,9 @@ type Config struct {
 	DefaultMaxUnits      int
 	MapsDir              string
 	ModsDir              string
-	DBPath               string
+	DBType               string // "sqlite" or "mysql"
+	DBPath               string // SQLite path (used when DBType=sqlite)
+	MySQLDSN             string // MySQL DSN (used when DBType=mysql), e.g. "user:pass@tcp(host:3306)/dbname?parseTime=true"
 	RedisAddr            string
 	RedisPassword        string
 	RedisDB              int
@@ -61,7 +63,9 @@ type fileConfig struct {
 	DefaultMaxUnits      int     `yaml:"default_max_units"`
 	MapsDir              string  `yaml:"maps_dir"`
 	ModsDir              string  `yaml:"mods_dir"`
+	DBType               string  `yaml:"db_type"`
 	DBPath               string  `yaml:"db_path"`
+	MySQLDSN             string  `yaml:"mysql_dsn"`
 	RedisAddr            string  `yaml:"redis_addr"`
 	RedisPassword        string  `yaml:"redis_password"`
 	RedisDB              int     `yaml:"redis_db"`
@@ -139,6 +143,7 @@ func defaultFileConfig() fileConfig {
 		DefaultMaxUnits:      200,
 		MapsDir:              "assets/maps",
 		ModsDir:              "assets/mods",
+		DBType:               "sqlite",
 		DBPath:               "data/rwgin.db",
 		HeartbeatIntervalSec: 2,
 		RegisterTimeoutSec:   5,
@@ -209,7 +214,9 @@ func fileConfigToConfig(fc fileConfig) Config {
 		DefaultMaxUnits:      fc.DefaultMaxUnits,
 		MapsDir:              fc.MapsDir,
 		ModsDir:              fc.ModsDir,
+		DBType:               fc.DBType,
 		DBPath:               fc.DBPath,
+		MySQLDSN:             fc.MySQLDSN,
 		RedisAddr:            fc.RedisAddr,
 		RedisPassword:        fc.RedisPassword,
 		RedisDB:              fc.RedisDB,
@@ -253,6 +260,9 @@ func fileConfigToConfig(fc fileConfig) Config {
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = d.DBPath
+	}
+	if cfg.DBType == "" {
+		cfg.DBType = d.DBType
 	}
 	// Apply defaults for zero-valued int/float fields
 	if cfg.DefaultMaxPlayers == 0 {
@@ -327,8 +337,14 @@ func applyEnvOverrides(cfg *Config) {
 	if v, ok := lookupEnv("RWGIN_MODS_DIR"); ok {
 		cfg.ModsDir = v
 	}
+	if v, ok := lookupEnv("RWGIN_DB_TYPE"); ok {
+		cfg.DBType = v
+	}
 	if v, ok := lookupEnv("RWGIN_DB_PATH"); ok {
 		cfg.DBPath = v
+	}
+	if v, ok := lookupEnv("RWGIN_MYSQL_DSN"); ok {
+		cfg.MySQLDSN = v
 	}
 	if v, ok := lookupEnv("RWGIN_HRPAUTH_URL"); ok {
 		cfg.HRPAuthURL = v

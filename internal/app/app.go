@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"rwgin/internal/api"
 	"rwgin/internal/config"
@@ -17,14 +19,35 @@ import (
 type App struct {
 	cfg        config.Config
 	logger     *log.Logger
-	db         *database.DB
+	db         database.Store
 	rdb        *redis.Client
 	gameServer *relay.Server
 	httpServer *http.Server
 }
 
 func New(cfg config.Config, logger *log.Logger) *App {
-	db, err := database.Open(cfg.DBPath, logger)
+	// Build DSN based on DBType
+	dsn := cfg.DBPath
+	if cfg.DBType == "mysql" {
+		if cfg.MySQLDSN == "" {
+			logger.Fatal("MySQL DSN is required when db_type=mysql (set mysql_dsn in config.yaml or RWGIN_MYSQL_DSN env)")
+		}
+		dsn = cfg.MySQLDSN
+	}
+
+	// Ensure SQLite directory exists
+	if cfg.DBType == "sqlite" || cfg.DBType == "" {
+		if err := os.MkdirAll(filepath.Dir(dsn), 0755); err != nil {
+			logger.Fatalf("failed to create db directory: %v", err)
+		}
+	}
+
+	dbCfg := database.DBConfig{
+		Type: cfg.DBType,
+		DSN:  dsn,
+	}
+
+	db, err := database.NewGORMStore(dbCfg, logger)
 	if err != nil {
 		logger.Fatalf("failed to open database: %v", err)
 	}

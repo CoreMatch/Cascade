@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS players (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id  TEXT    NOT NULL UNIQUE,
+    name       TEXT    NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_players_player_id ON players(player_id);

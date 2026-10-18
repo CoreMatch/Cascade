@@ -25,13 +25,13 @@ type Server struct {
 	logger    *log.Logger
 	rooms     *Manager
 	auth      *auth.Client
-	db        *database.DB
+	db        database.Store
 	rdb       *redis.Client
 	listener  net.Listener
 	connCount atomic.Int32
 }
 
-func NewServer(cfg config.Config, logger *log.Logger, db *database.DB, rdb *redis.Client) *Server {
+func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *redis.Client) *Server {
 	s := &Server{
 		cfg:    cfg,
 		logger: logger,

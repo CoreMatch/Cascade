@@ -4,138 +4,94 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database"
+	"github.com/golang-migrate/migrate/v4/database/mysql"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/source/file"
 )
 
-const currentSchemaVersion = 2
-
-// Migration represents a single database migration step.
-type Migration struct {
-	Version     int
-	Description string
-	Up          func(tx *sql.Tx) error
-}
-
-// migrations holds all registered migrations in order.
-var migrations = []Migration{
-	{
-		Version:     1,
-		Description: "create players table",
-		Up: func(tx *sql.Tx) error {
-			_, err := tx.Exec(`
-				CREATE TABLE IF NOT EXISTS players (
-					id         INTEGER PRIMARY KEY AUTOINCREMENT,
-					player_id  TEXT    NOT NULL UNIQUE,
-					name       TEXT    NOT NULL DEFAULT '',
-					created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-					updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-				);
-				CREATE INDEX IF NOT EXISTS idx_players_player_id ON players(player_id);
-			`)
-			return err
-		},
-	},
-	{
-		Version:     2,
-		Description: "create player_bindings table for HA user mapping",
-		Up: func(tx *sql.Tx) error {
-			_, err := tx.Exec(`
-				CREATE TABLE IF NOT EXISTS player_bindings (
-					id           INTEGER PRIMARY KEY AUTOINCREMENT,
-					game_uuid    TEXT    NOT NULL,
-					ha_user_uuid TEXT    NOT NULL DEFAULT '',
-					player_name  TEXT    NOT NULL DEFAULT '',
-					cbh          INTEGER NOT NULL DEFAULT 0,
-					quick_auth   INTEGER NOT NULL DEFAULT 1,
-					last_login   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-					claimed_at   DATETIME,
-					created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-					UNIQUE(game_uuid)
-				);
-				CREATE INDEX IF NOT EXISTS idx_bindings_game_uuid ON player_bindings(game_uuid);
-				CREATE INDEX IF NOT EXISTS idx_bindings_ha_user ON player_bindings(ha_user_uuid);
-				CREATE INDEX IF NOT EXISTS idx_bindings_cbh ON player_bindings(cbh);
-			`)
-			return err
-		},
-	},
-}
-
-// EnsureSchemaVersionTable creates the schema_version tracking table if it doesn't exist.
-func EnsureSchemaVersionTable(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS schema_version (
-			version     INTEGER NOT NULL,
-			applied_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-	`)
-	return err
-}
-
-// GetCurrentVersion reads the current schema version from the database.
-// Returns 0 if no version has been recorded yet.
-func GetCurrentVersion(db *sql.DB) (int, error) {
-	var version int
-	err := db.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&version)
+// RunMigrations runs database migrations using golang-migrate.
+// dbType should be "sqlite" or "mysql".
+// dsn is the database connection string.
+// migrationsDir is the path to the migrations directory.
+func RunMigrations(dbType, dsn, migrationsDir string, logger *log.Logger) error {
+	// Open database connection for migrations
+	db, err := sql.Open(dbType, dsn)
 	if err != nil {
-		return 0, fmt.Errorf("read schema version: %w", err)
+		return fmt.Errorf("open database for migrations: %w", err)
 	}
-	return version, nil
-}
+	defer db.Close()
 
-// Migrate runs all pending migrations from the current version to the target version.
-// If target is 0, it migrates to the latest available version.
-func Migrate(db *sql.DB, logger *log.Logger, target int) error {
-	if err := EnsureSchemaVersionTable(db); err != nil {
-		return fmt.Errorf("ensure schema_version table: %w", err)
+	// Get the appropriate database driver
+	var driver database.Driver
+	switch dbType {
+	case "sqlite3":
+		driver, err = sqlite3.WithInstance(db, &sqlite3.Config{})
+	case "mysql":
+		driver, err = mysql.WithInstance(db, &mysql.Config{})
+	default:
+		return fmt.Errorf("unsupported database type for migrations: %s", dbType)
 	}
-
-	current, err := GetCurrentVersion(db)
 	if err != nil {
-		return err
+		return fmt.Errorf("create migration driver: %w", err)
 	}
 
-	if target == 0 {
-		target = currentSchemaVersion
+	// Get absolute path to migrations directory
+	absMigrationsDir, err := filepath.Abs(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("get absolute path: %w", err)
 	}
 
-	if current >= target {
-		logger.Printf("[db] schema is up to date (version %d)", current)
+	// Check if migrations directory exists
+	if _, err := os.Stat(absMigrationsDir); os.IsNotExist(err) {
+		logger.Printf("[migrate] migrations directory not found: %s, skipping", absMigrationsDir)
 		return nil
 	}
 
-	logger.Printf("[db] current schema version: %d, target: %d", current, target)
-
-	for _, m := range migrations {
-		if m.Version <= current {
-			continue
-		}
-		if m.Version > target {
-			break
-		}
-
-		logger.Printf("[db] applying migration v%d: %s", m.Version, m.Description)
-
-		tx, err := db.Begin()
-		if err != nil {
-			return fmt.Errorf("begin transaction for v%d: %w", m.Version, err)
-		}
-
-		if err := m.Up(tx); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("migration v%d failed: %w", m.Version, err)
-		}
-
-		if _, err := tx.Exec("INSERT INTO schema_version (version) VALUES (?)", m.Version); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("record version v%d: %w", m.Version, err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit migration v%d: %w", m.Version, err)
-		}
-
-		logger.Printf("[db] migration v%d applied successfully", m.Version)
+	// Create file source
+	src, err := (&file.File{}).Open("file://" + absMigrationsDir)
+	if err != nil {
+		return fmt.Errorf("open migration source: %w", err)
 	}
 
+	// Create migrate instance
+	m, err := migrate.NewWithInstance("file", src, dbType, driver)
+	if err != nil {
+		return fmt.Errorf("create migrate instance: %w", err)
+	}
+	defer m.Close()
+
+	// Run migrations
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	logger.Printf("[migrate] migrations completed successfully")
 	return nil
+}
+
+// RunMigrationsForDB runs migrations for the given database configuration.
+func RunMigrationsForDB(dbType, dsn string, logger *log.Logger) error {
+	// Determine the migrations directory based on database type
+	var migrationsDir string
+	switch dbType {
+	case "sqlite", "sqlite3":
+		migrationsDir = "internal/database/migrations/sqlite"
+	case "mysql":
+		migrationsDir = "internal/database/migrations/mysql"
+	default:
+		return fmt.Errorf("unsupported database type: %s", dbType)
+	}
+
+	// Normalize dbType for the driver
+	driverType := dbType
+	if dbType == "sqlite" {
+		driverType = "sqlite3"
+	}
+
+	return RunMigrations(driverType, dsn, migrationsDir, logger)
 }
