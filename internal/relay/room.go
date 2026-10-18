@@ -162,6 +162,7 @@ func (m *Manager) Create(code, title, uuid string, maxPlayers int) (*Room, error
 		adminIDs:     make(map[string]bool),
 		mutedIDs:     make(map[string]bool),
 		disconnectedPlayers: make(map[string]*DisconnectedPlayer),
+		bannedIDs:    make(map[string]bool),
 		AISlot:       -1,
 		gameCommands: make(chan CommandRequest, 128),
 		stopCh:       make(chan struct{}),
@@ -281,6 +282,8 @@ type Room struct {
 	disconnectedPlayers map[string]*DisconnectedPlayer
 	lastSave     []byte
 	syncing      bool
+	bannedIDs    map[string]bool
+	activeVote   *Vote
 	AISlot       int
 	gameCommands chan CommandRequest
 	stopCh       chan struct{}
@@ -297,6 +300,14 @@ type DisconnectedPlayer struct {
 	Slot     int
 	Team     int32
 	LeftAt   time.Time
+}
+
+// Vote represents an active vote in the room.
+type Vote struct {
+	Type      string // "start", "sync", "gameover"
+	Initiator string // playerID of the initiator
+	Votes     map[string]bool
+	ExpiresAt time.Time
 }
 
 func (r *Room) Summary() RoomSummary {
@@ -583,6 +594,79 @@ func (r *Room) ClearStartVotes() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.startVotes = make(map[string]bool)
+}
+
+// StartVote initiates a new vote of the given type.
+func (r *Room) StartVote(voteType, initiatorID string) *Vote {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// If there's already an active vote, expire it
+	if r.activeVote != nil {
+		r.activeVote = nil
+	}
+
+	vote := &Vote{
+		Type:      voteType,
+		Initiator: initiatorID,
+		Votes:     map[string]bool{initiatorID: true},
+		ExpiresAt: time.Now().Add(30 * time.Second),
+	}
+	r.activeVote = vote
+	return vote
+}
+
+// CastVote adds a vote from a player. Returns the current vote count.
+func (r *Room) CastVote(voteType, playerID string) (int, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.activeVote == nil || r.activeVote.Type != voteType {
+		return 0, false // No active vote of this type
+	}
+
+	if time.Now().After(r.activeVote.ExpiresAt) {
+		r.activeVote = nil
+		return 0, false // Vote expired
+	}
+
+	r.activeVote.Votes[playerID] = true
+	return len(r.activeVote.Votes), true
+}
+
+// ClearVote clears the active vote.
+func (r *Room) ClearVote() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.activeVote = nil
+}
+
+// GetActiveVote returns the active vote, or nil if none.
+func (r *Room) GetActiveVote() *Vote {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.activeVote
+}
+
+// BanPlayer adds a player to the ban list.
+func (r *Room) BanPlayer(playerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.bannedIDs[playerID] = true
+}
+
+// UnbanPlayer removes a player from the ban list.
+func (r *Room) UnbanPlayer(playerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.bannedIDs, playerID)
+}
+
+// IsBanned checks if a player is banned.
+func (r *Room) IsBanned(playerID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.bannedIDs[playerID]
 }
 
 func (r *Room) IsInGame() bool {

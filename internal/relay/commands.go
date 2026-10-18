@@ -691,6 +691,155 @@ func DefaultRegistry() *CommandRegistry {
 		ctx.Room.broadcastSystem(fmt.Sprintf("游戏已由 %s 恢复。", ctx.Sender.Name()))
 	})
 
+	// --- Vote commands ---
+
+	reg.Register("sync", "发起同步投票", false, func(ctx *CommandContext) {
+		if !ctx.Room.IsInGame() {
+			ctx.Reply("当前不在游戏中。")
+			return
+		}
+
+		s, ok := ctx.Sender.(*Session)
+		if !ok {
+			return
+		}
+
+		// Admin can force sync
+		if ctx.Room.IsAdmin(s) {
+			ctx.Room.broadcastSystem(fmt.Sprintf("管理员 %s 发起同步。", s.Name()))
+			go ctx.Room.TriggerSync(s.server)
+			return
+		}
+
+		// Check if there's already an active sync vote
+		if vote := ctx.Room.GetActiveVote(); vote != nil && vote.Type == "sync" {
+			// Cast vote
+			votes, ok := ctx.Room.CastVote("sync", s.playerID)
+			if !ok {
+				ctx.Reply("投票已过期。")
+				return
+			}
+			totalHumans := ctx.Room.HumanCountLocked()
+			required := (totalHumans + 1) / 2
+			if votes >= required {
+				ctx.Room.ClearVote()
+				ctx.Room.broadcastSystem(fmt.Sprintf("同步投票通过 (%d/%d)！", votes, required))
+				go ctx.Room.TriggerSync(s.server)
+			} else {
+				ctx.Room.broadcastSystem(fmt.Sprintf("%s 赞成同步 (%d/%d)", s.Name(), votes, required))
+			}
+			return
+		}
+
+		// Start new vote
+		ctx.Room.StartVote("sync", s.playerID)
+		totalHumans := ctx.Room.HumanCountLocked()
+		required := (totalHumans + 1) / 2
+		if 1 >= required {
+			ctx.Room.ClearVote()
+			ctx.Room.broadcastSystem("同步投票通过！")
+			go ctx.Room.TriggerSync(s.server)
+		} else {
+			ctx.Room.broadcastSystem(fmt.Sprintf("%s 发起同步投票 (1/%d)", s.Name(), required))
+		}
+	})
+
+	reg.Register("gameover", "发起结束游戏投票", false, func(ctx *CommandContext) {
+		if !ctx.Room.IsInGame() {
+			ctx.Reply("当前不在游戏中。")
+			return
+		}
+
+		s, ok := ctx.Sender.(*Session)
+		if !ok {
+			return
+		}
+
+		// Admin can force gameover
+		if ctx.Room.IsAdmin(s) {
+			ctx.Room.SetInGame(false)
+			ctx.Room.broadcast(protocol.EncodeReturnToBattleroom())
+			ctx.Room.broadcastSystem(fmt.Sprintf("管理员 %s 结束了游戏。", s.Name()))
+			_ = ctx.Room.broadcastTeamList()
+			return
+		}
+
+		// Check if there's already an active gameover vote
+		if vote := ctx.Room.GetActiveVote(); vote != nil && vote.Type == "gameover" {
+			// Cast vote
+			votes, ok := ctx.Room.CastVote("gameover", s.playerID)
+			if !ok {
+				ctx.Reply("投票已过期。")
+				return
+			}
+			totalHumans := ctx.Room.HumanCountLocked()
+			required := (totalHumans + 1) / 2
+			if votes >= required {
+				ctx.Room.ClearVote()
+				ctx.Room.SetInGame(false)
+				ctx.Room.broadcast(protocol.EncodeReturnToBattleroom())
+				ctx.Room.broadcastSystem(fmt.Sprintf("结束游戏投票通过 (%d/%d)！", votes, required))
+				_ = ctx.Room.broadcastTeamList()
+			} else {
+				ctx.Room.broadcastSystem(fmt.Sprintf("%s 赞成结束游戏 (%d/%d)", s.Name(), votes, required))
+			}
+			return
+		}
+
+		// Start new vote
+		ctx.Room.StartVote("gameover", s.playerID)
+		totalHumans := ctx.Room.HumanCountLocked()
+		required := (totalHumans + 1) / 2
+		if 1 >= required {
+			ctx.Room.ClearVote()
+			ctx.Room.SetInGame(false)
+			ctx.Room.broadcast(protocol.EncodeReturnToBattleroom())
+			ctx.Room.broadcastSystem("结束游戏投票通过！")
+			_ = ctx.Room.broadcastTeamList()
+		} else {
+			ctx.Room.broadcastSystem(fmt.Sprintf("%s 发起结束游戏投票 (1/%d)", s.Name(), required))
+		}
+	})
+
+	// --- Ban commands ---
+
+	reg.Register("ban", "封禁玩家 (用法: /ban <玩家名或#槽位>)", true, func(ctx *CommandContext) {
+		if len(ctx.Args) == 0 {
+			ctx.Reply("用法: /ban <玩家名或#槽位>")
+			return
+		}
+		target, err := ctx.Room.FindTarget(ctx.Args[0])
+		if err != nil {
+			ctx.Reply("错误: " + err.Error())
+			return
+		}
+		if s, ok := ctx.Sender.(*Session); ok {
+			if !ctx.Room.IsAdmin(s) {
+				ctx.Reply("需要管理员权限。")
+				return
+			}
+			ctx.Room.BanPlayer(target.playerID)
+			ctx.Room.broadcastSystem(fmt.Sprintf("%s 已被封禁。", target.Name()))
+			// Kick the banned player
+			_ = target.Send(protocol.EncodeKick("你已被封禁。"))
+			target.close()
+		}
+	})
+
+	reg.Register("unban", "解封玩家 (用法: /unban <玩家ID>)", true, func(ctx *CommandContext) {
+		if len(ctx.Args) == 0 {
+			ctx.Reply("用法: /unban <玩家ID>")
+			return
+		}
+		playerID := ctx.Args[0]
+		if !ctx.Room.IsBanned(playerID) {
+			ctx.Reply("该玩家未被封禁。")
+			return
+		}
+		ctx.Room.UnbanPlayer(playerID)
+		ctx.Room.broadcastSystem(fmt.Sprintf("玩家 %s 已被解封。", playerID))
+	})
+
 	reg.Register("version", "显示服务器版本信息", false, func(ctx *CommandContext) {
 		ctx.Reply("MCAGS-RW Server v0.1.0")
 	})

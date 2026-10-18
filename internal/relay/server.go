@@ -406,6 +406,13 @@ func (s *Session) joinRoom(code string) error {
 
 	s.server.logger.Printf("player %s joined room %s (new: %v)", s.name, room.Code, isNew)
 
+	// Check if player is banned
+	if room.IsBanned(s.playerID) {
+		_ = s.Send(protocol.EncodeKick("你已被封禁，无法加入此房间。"))
+		room.Leave(s)
+		return fmt.Errorf("player is banned")
+	}
+
 	// Check for reconnection
 	if dp := room.FindDisconnected(s.playerID); dp != nil {
 		// This is a reconnection - restore the player's slot
