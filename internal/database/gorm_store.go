@@ -110,6 +110,19 @@ func (s *GORMStore) GetBindingByPlayerName(playerName string) (*PlayerBinding, e
 	return &binding, nil
 }
 
+// GetBindingsByHAUUID returns all bindings linked to the given HA user UUID.
+func (s *GORMStore) GetBindingsByHAUUID(haUserUUID string) ([]PlayerBinding, error) {
+	var bindings []PlayerBinding
+	err := s.db.Where("ha_user_uuid = ?", haUserUUID).Order("last_login DESC").Find(&bindings).Error
+	if err != nil {
+		return nil, err
+	}
+	if bindings == nil {
+		bindings = []PlayerBinding{}
+	}
+	return bindings, nil
+}
+
 // CreateProxyBinding creates or updates a proxy binding (CBH=0) for a guest player.
 func (s *GORMStore) CreateProxyBinding(gameUUID, playerName string) error {
 	now := time.Now()

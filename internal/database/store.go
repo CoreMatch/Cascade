@@ -13,6 +13,10 @@ type Store interface {
 	// Returns nil, nil if not found.
 	GetBindingByPlayerName(playerName string) (*PlayerBinding, error)
 
+	// GetBindingsByHAUUID returns all bindings linked to the given HA user UUID.
+	// Returns an empty slice (not nil) if none found.
+	GetBindingsByHAUUID(haUserUUID string) ([]PlayerBinding, error)
+
 	// CreateProxyBinding creates or updates a proxy binding (CBH=0) for a guest player.
 	CreateProxyBinding(gameUUID, playerName string) error
 

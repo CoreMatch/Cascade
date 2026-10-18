@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"rwgin"
 	"rwgin/internal/app"
 	"rwgin/internal/config"
 )
@@ -18,7 +19,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	application := app.New(cfg, logger)
+	application := app.New(cfg, logger, rwgin.SDKFS)
 	if err := application.Run(ctx); err != nil {
 		logger.Fatalf("server exited with error: %v", err)
 	}

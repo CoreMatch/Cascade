@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "name": "rusted-warfare",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/rusted-warfare-binding",
+      "module": "src/pages/BindingStatus",
+      "title": "Game Account Binding"
+    }
+  ],
+  "menu": [
+    {
+      "label": "Game Binding",
+      "path": "/rusted-warfare-binding"
+    }
+  ],
+  "dashboard": [
+    {
+      "label": "Game Account Binding",
+      "path": "/rusted-warfare-binding"
+    }
+  ],
+  "profile_cards": [],
+  "dependencies": {},
+  "run_scripts": false
+}

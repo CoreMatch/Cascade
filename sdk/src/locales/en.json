@@ -1,0 +1,19 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "noData": "No data"
+  },
+  "binding": {
+    "title": "Game Account Binding",
+    "description": "View your Rusted Warfare game account binding status.",
+    "notBound": "No game account bound. Join a game room and use /claim to bind.",
+    "bound": "Bound",
+    "guest": "Guest (not claimed)",
+    "claimed": "Claimed",
+    "playerName": "Player Name",
+    "status": "Status",
+    "lastLogin": "Last Login",
+    "gameUUID": "Game UUID",
+    "quickAuth": "Quick Auth"
+  }
+}

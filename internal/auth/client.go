@@ -1,12 +1,18 @@
 package auth
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -258,4 +264,208 @@ func (c *Client) ValidateInternalKey(key string) bool {
 	c.internalKeyMu.RLock()
 	defer c.internalKeyMu.RUnlock()
 	return c.internalKey != "" && c.internalKey == key
+}
+
+// doAuthRequest is a helper for making authenticated JSON requests to Core.
+func (c *Client) doAuthRequest(method, path string, body interface{}) error {
+	token, err := c.getToken()
+	if err != nil {
+		return fmt.Errorf("get token: %w", err)
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		bodyReader = bytes.NewBuffer(b)
+	}
+
+	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("request failed (status %d): %s", resp.StatusCode, string(b))
+	}
+
+	return nil
+}
+
+// RegisterPresence registers this service's presence with HRPAuth Core.
+func (c *Client) RegisterPresence(relayPrefix string) error {
+	body := map[string]interface{}{
+		"name":           c.serviceName,
+		"ttl_seconds":    120,
+		"security_level": 0,
+	}
+	return c.doAuthRequest("POST", "/services/presence", body)
+}
+
+// RegisterRelay registers relay rules with HRPAuth Core so the gateway
+// forwards requests with the given prefix to this service.
+func (c *Client) RegisterRelay(relayPrefix string) error {
+	// The paths that Core should forward to us
+	paths := []string{
+		"/api/auth",
+		"/internal/heartbeat",
+		"/internal/proxy-register",
+	}
+
+	relays := make([]map[string]string, len(paths))
+	for i, p := range paths {
+		relays[i] = map[string]string{
+			"dest":   relayPrefix + p,
+			"source": c.baseURL + p,
+		}
+	}
+
+	body := map[string]interface{}{
+		"name":   c.serviceName,
+		"relays": relays,
+	}
+	return c.doAuthRequest("POST", "/services/relay", body)
+}
+
+// UploadSDKPackage packages the embedded SDK filesystem as a tar.gz
+// and uploads it to HRPAuth Core via POST /services/sdk-packages.
+func (c *Client) UploadSDKPackage(sdkFS embed.FS, name string) error {
+	tarGz, err := packageSDKAsTarGz(sdkFS, "sdk")
+	if err != nil {
+		return fmt.Errorf("package SDK: %w", err)
+	}
+
+	token, err := c.getToken()
+	if err != nil {
+		return fmt.Errorf("get token: %w", err)
+	}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("package", name+".tar.gz")
+	if err != nil {
+		return err
+	}
+	if _, err := fw.Write(tarGz); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/services/sdk-packages", &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusConflict {
+		// Package already exists, delete and retry
+		if err := c.deleteSDKPackage(name, token); err != nil {
+			return fmt.Errorf("delete existing package: %w", err)
+		}
+		return c.UploadSDKPackage(sdkFS, name)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("upload failed (status %d): %s", resp.StatusCode, string(b))
+	}
+
+	return nil
+}
+
+func (c *Client) deleteSDKPackage(name, token string) error {
+	req, err := http.NewRequest(http.MethodDelete, c.baseURL+"/services/sdk-packages/"+name, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// packageSDKAsTarGz reads all files from the embedded FS under the given root
+// and returns a tar.gz byte slice.
+func packageSDKAsTarGz(fsys embed.FS, root string) ([]byte, error) {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	entries, err := fs.ReadDir(fsys, root)
+	if err != nil {
+		return nil, err
+	}
+
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		items, err := fs.ReadDir(fsys, dir)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			fullPath := dir + "/" + item.Name()
+			if item.IsDir() {
+				if err := walk(fullPath); err != nil {
+					return err
+				}
+				continue
+			}
+			data, err := fs.ReadFile(fsys, fullPath)
+			if err != nil {
+				return err
+			}
+			// Use relative path from root
+			relPath := strings.TrimPrefix(fullPath, root+"/")
+			hdr := &tar.Header{
+				Name: filepath.Join("sdk", relPath),
+				Mode: 0644,
+				Size: int64(len(data)),
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			if _, err := tw.Write(data); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	_ = entries // root entries are handled by walk
+	if err := walk(root); err != nil {
+		return nil, err
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	if err := gw.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }

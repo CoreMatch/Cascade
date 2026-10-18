@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"rwgin/internal/api"
 	"rwgin/internal/auth"
@@ -25,9 +27,10 @@ type App struct {
 	authClient *auth.Client
 	gameServer *relay.Server
 	httpServer *http.Server
+	sdkFS      embed.FS
 }
 
-func New(cfg config.Config, logger *log.Logger) *App {
+func New(cfg config.Config, logger *log.Logger, sdkFS embed.FS) *App {
 	// Build DSN based on DBType
 	dsn := cfg.DBPath
 	if cfg.DBType == "mysql" {
@@ -88,11 +91,22 @@ func New(cfg config.Config, logger *log.Logger) *App {
 		authClient: authClient,
 		gameServer: gameServer,
 		httpServer: httpServer,
+		sdkFS:      sdkFS,
 	}
 }
 
 func (a *App) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
+
+	// Register with HRPAuth Core and upload SDK (non-blocking)
+	if a.authClient != nil {
+		go func() {
+			time.Sleep(2 * time.Second)
+			if err := a.registerService(); err != nil {
+				a.logger.Printf("[startup] warning: service registration failed: %v", err)
+			}
+		}()
+	}
 
 	go func() {
 		a.logger.Printf("http listener started on %s", a.cfg.HTTPListenAddr)
@@ -114,4 +128,36 @@ func (a *App) Run(ctx context.Context) error {
 		_ = a.httpServer.Shutdown(context.Background())
 		return err
 	}
+}
+
+// registerService registers this service with HRPAuth Core and uploads the SDK package.
+func (a *App) registerService() error {
+	// 1. Register presence
+	prefix := a.cfg.HRPAuthRelayPrefix
+	if prefix == "" {
+		prefix = "/rusted-warfare"
+	}
+	if err := a.authClient.RegisterPresence(prefix); err != nil {
+		return fmt.Errorf("register presence: %w", err)
+	}
+	a.logger.Printf("[startup] presence registered with prefix %s", prefix)
+
+	// 2. Register relay rules
+	if err := a.authClient.RegisterRelay(prefix); err != nil {
+		return fmt.Errorf("register relay: %w", err)
+	}
+	a.logger.Printf("[startup] relay rules registered")
+
+	// 3. Refresh internal key (may have changed after registration)
+	if err := a.authClient.FetchInternalKey(); err != nil {
+		a.logger.Printf("[startup] warning: failed to refresh internal key: %v", err)
+	}
+
+	// 4. Upload SDK package
+	if err := a.authClient.UploadSDKPackage(a.sdkFS, "rusted-warfare"); err != nil {
+		return fmt.Errorf("upload SDK: %w", err)
+	}
+	a.logger.Printf("[startup] SDK package uploaded")
+
+	return nil
 }

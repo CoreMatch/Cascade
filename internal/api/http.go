@@ -286,6 +286,45 @@ func Router(rooms *relay.Manager, authClient *auth.Client, db database.Store) *g
 				"lastLogin":  binding.LastLogin,
 			})
 		})
+
+		// GET /api/auth/bindings/:haUserUUID — list all bindings for an HA user
+		engine.GET("/api/auth/bindings/:haUserUUID", func(c *gin.Context) {
+			haUserUUID := c.Param("haUserUUID")
+
+			if db == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+				return
+			}
+
+			bindings, err := db.GetBindingsByHAUUID(haUserUUID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			type bindingJSON struct {
+				GameUUID   string `json:"gameUUID"`
+				HAUserUUID string `json:"haUserUUID"`
+				PlayerName string `json:"playerName"`
+				CBH        int    `json:"cbh"`
+				QuickAuth  bool   `json:"quickAuth"`
+				LastLogin  string `json:"lastLogin"`
+			}
+
+			result := make([]bindingJSON, len(bindings))
+			for i, b := range bindings {
+				result[i] = bindingJSON{
+					GameUUID:   b.GameUUID,
+					HAUserUUID: b.HAUserUUID,
+					PlayerName: b.PlayerName,
+					CBH:        b.CBH,
+					QuickAuth:  b.QuickAuth,
+					LastLogin:  b.LastLogin.Format("2006-01-02T15:04:05Z"),
+				}
+			}
+
+			c.JSON(http.StatusOK, gin.H{"data": result})
+		})
 	}
 
 	// --- Internal endpoints (protected by X-Internal-Key) ---

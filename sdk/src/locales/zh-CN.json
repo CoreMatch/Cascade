@@ -1,0 +1,19 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "noData": "暂无数据"
+  },
+  "binding": {
+    "title": "游戏账号绑定",
+    "description": "查看你的铁锈战争游戏账号绑定状态。",
+    "notBound": "尚未绑定游戏账号。加入游戏房间后使用 /claim 进行绑定。",
+    "bound": "已绑定",
+    "guest": "游客（未认领）",
+    "claimed": "已认领",
+    "playerName": "玩家名称",
+    "status": "状态",
+    "lastLogin": "最后登录",
+    "gameUUID": "游戏 UUID",
+    "quickAuth": "快速认证"
+  }
+}
