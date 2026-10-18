@@ -17,6 +17,7 @@ import (
 	"rwgin/internal/config"
 	"rwgin/internal/database"
 	"rwgin/internal/protocol"
+	"rwgin/internal/redis"
 )
 
 type Server struct {
@@ -25,15 +26,17 @@ type Server struct {
 	rooms     *Manager
 	auth      *auth.Client
 	db        *database.DB
+	rdb       *redis.Client
 	listener  net.Listener
 	connCount atomic.Int32
 }
 
-func NewServer(cfg config.Config, logger *log.Logger, db *database.DB) *Server {
+func NewServer(cfg config.Config, logger *log.Logger, db *database.DB, rdb *redis.Client) *Server {
 	s := &Server{
 		cfg:    cfg,
 		logger: logger,
 		db:     db,
+		rdb:    rdb,
 	}
 	if cfg.HRPAuthURL != "" {
 		s.auth = auth.New(cfg.HRPAuthURL, cfg.HRPAuthClientID, cfg.HRPAuthClientSecret)
@@ -652,18 +655,27 @@ func (s *Session) systemMessage(message string) error {
 	return s.Send(packet)
 }
 
-// restoreHABinding restores HA authentication state from the database (for reconnection).
+// restoreHABinding restores HA authentication state from Redis + database (for reconnection).
 func (s *Session) restoreHABinding() {
-	binding, err := s.server.db.GetBindingByGameUUID(s.playerID)
-	if err != nil {
-		s.server.logger.Printf("HA: failed to lookup binding for %s: %v", s.playerID, err)
+	if s.server.rdb == nil {
 		return
 	}
-	if binding != nil && binding.IsAuthenticated {
-		s.haUserUUID = binding.HAUserUUID
-		s.authenticated = true
-		s.server.logger.Printf("HA: restored binding for %s -> uuid=%s", s.playerID, binding.HAUserUUID)
+
+	// Check Redis for authentication state (transient, with TTL)
+	haUserUUID, ok := s.server.rdb.IsAuthenticated(s.playerID)
+	if !ok {
+		return
 	}
+
+	// Verify the binding exists in database
+	binding, err := s.server.db.GetBindingByGameUUID(s.playerID)
+	if err != nil || binding == nil {
+		return
+	}
+
+	s.haUserUUID = haUserUUID
+	s.authenticated = true
+	s.server.logger.Printf("HA: restored binding for %s -> uuid=%s", s.playerID, haUserUUID)
 }
 
 func (s *Session) buildPreregisterPacket(handshakeID string) (protocol.Packet, error) {

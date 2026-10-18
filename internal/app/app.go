@@ -10,6 +10,7 @@ import (
 	"rwgin/internal/api"
 	"rwgin/internal/config"
 	"rwgin/internal/database"
+	"rwgin/internal/redis"
 	"rwgin/internal/relay"
 )
 
@@ -17,6 +18,7 @@ type App struct {
 	cfg        config.Config
 	logger     *log.Logger
 	db         *database.DB
+	rdb        *redis.Client
 	gameServer *relay.Server
 	httpServer *http.Server
 }
@@ -27,7 +29,15 @@ func New(cfg config.Config, logger *log.Logger) *App {
 		logger.Fatalf("failed to open database: %v", err)
 	}
 
-	gameServer := relay.NewServer(cfg, logger, db)
+	var rdb *redis.Client
+	if cfg.RedisAddr != "" {
+		rdb, err = redis.New(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.RedisPrefix, logger)
+		if err != nil {
+			logger.Fatalf("failed to connect to redis: %v", err)
+		}
+	}
+
+	gameServer := relay.NewServer(cfg, logger, db, rdb)
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPListenAddr,
 		Handler: api.Router(gameServer.Rooms()),
@@ -37,6 +47,7 @@ func New(cfg config.Config, logger *log.Logger) *App {
 		cfg:        cfg,
 		logger:     logger,
 		db:         db,
+		rdb:        rdb,
 		gameServer: gameServer,
 		httpServer: httpServer,
 	}

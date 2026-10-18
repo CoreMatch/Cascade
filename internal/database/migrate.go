@@ -40,13 +40,12 @@ var migrations = []Migration{
 		Up: func(tx *sql.Tx) error {
 			_, err := tx.Exec(`
 				CREATE TABLE IF NOT EXISTS player_bindings (
-					id               INTEGER PRIMARY KEY AUTOINCREMENT,
-					game_uuid        TEXT    NOT NULL,
-					ha_user_uuid     TEXT    NOT NULL DEFAULT '',
-					player_name      TEXT    NOT NULL DEFAULT '',
-					is_authenticated INTEGER NOT NULL DEFAULT 0,
-					last_login       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-					created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					id           INTEGER PRIMARY KEY AUTOINCREMENT,
+					game_uuid    TEXT    NOT NULL,
+					ha_user_uuid TEXT    NOT NULL DEFAULT '',
+					player_name  TEXT    NOT NULL DEFAULT '',
+					last_login   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					UNIQUE(game_uuid)
 				);
 				CREATE INDEX IF NOT EXISTS idx_bindings_game_uuid ON player_bindings(game_uuid);

@@ -31,6 +31,10 @@ type Config struct {
 	MapsDir              string
 	ModsDir              string
 	DBPath               string
+	RedisAddr            string
+	RedisPassword        string
+	RedisDB              int
+	RedisPrefix          string
 	HRPAuthURL           string
 	HRPAuthClientID      string // OAuth2 client_id
 	HRPAuthClientSecret  string // OAuth2 client_secret
@@ -58,6 +62,10 @@ type fileConfig struct {
 	MapsDir              string  `yaml:"maps_dir"`
 	ModsDir              string  `yaml:"mods_dir"`
 	DBPath               string  `yaml:"db_path"`
+	RedisAddr            string  `yaml:"redis_addr"`
+	RedisPassword        string  `yaml:"redis_password"`
+	RedisDB              int     `yaml:"redis_db"`
+	RedisPrefix          string  `yaml:"redis_prefix"`
 	HRPAuthURL           string  `yaml:"hrpauth_url"`
 	HRPAuthClientID      string  `yaml:"hrpauth_client_id"`
 	HRPAuthClientSecret  string  `yaml:"hrpauth_client_secret"`
@@ -202,6 +210,10 @@ func fileConfigToConfig(fc fileConfig) Config {
 		MapsDir:              fc.MapsDir,
 		ModsDir:              fc.ModsDir,
 		DBPath:               fc.DBPath,
+		RedisAddr:            fc.RedisAddr,
+		RedisPassword:        fc.RedisPassword,
+		RedisDB:              fc.RedisDB,
+		RedisPrefix:          fc.RedisPrefix,
 		HRPAuthURL:           fc.HRPAuthURL,
 		HRPAuthClientID:      fc.HRPAuthClientID,
 		HRPAuthClientSecret:  fc.HRPAuthClientSecret,

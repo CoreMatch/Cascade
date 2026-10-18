@@ -5,6 +5,7 @@ import (
 	"rwgin/internal/protocol"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CommandContext provides information about the command being executed.
@@ -891,9 +892,16 @@ func DefaultRegistry() *CommandRegistry {
 		}
 
 		// Store binding: game_uuid <-> ha_user_uuid
-		if err := s.server.db.UpsertBinding(s.playerID, user.UUID, s.name, true); err != nil {
+		if err := s.server.db.UpsertBinding(s.playerID, user.UUID, s.name); err != nil {
 			ctx.Reply("绑定失败: " + err.Error())
 			return
+		}
+
+		// Store authentication state in Redis (transient, with TTL)
+		if s.server.rdb != nil {
+			if err := s.server.rdb.SetAuthenticated(s.playerID, user.UUID, 24*time.Hour); err != nil {
+				s.server.logger.Printf("HA: failed to set redis auth for %s: %v", s.playerID, err)
+			}
 		}
 
 		s.haUserUUID = user.UUID

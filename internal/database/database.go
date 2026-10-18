@@ -56,47 +56,39 @@ func (db *DB) Conn() *sql.DB {
 
 // PlayerBinding represents a mapping between a game UUID and an HA user UUID.
 type PlayerBinding struct {
-	ID              int64
-	GameUUID        string
-	HAUserUUID      string
-	PlayerName      string
-	IsAuthenticated bool
-	LastLogin       string
-	CreatedAt       string
+	ID          int64
+	GameUUID    string
+	HAUserUUID  string
+	PlayerName  string
+	LastLogin   string
+	CreatedAt   string
 }
 
 // GetBindingByGameUUID looks up a player binding by game UUID.
 func (db *DB) GetBindingByGameUUID(gameUUID string) (*PlayerBinding, error) {
 	var b PlayerBinding
-	var isAuth int
 	err := db.conn.QueryRow(
-		"SELECT id, game_uuid, ha_user_uuid, player_name, is_authenticated, last_login, created_at FROM player_bindings WHERE game_uuid = ?",
+		"SELECT id, game_uuid, ha_user_uuid, player_name, last_login, created_at FROM player_bindings WHERE game_uuid = ?",
 		gameUUID,
-	).Scan(&b.ID, &b.GameUUID, &b.HAUserUUID, &b.PlayerName, &isAuth, &b.LastLogin, &b.CreatedAt)
+	).Scan(&b.ID, &b.GameUUID, &b.HAUserUUID, &b.PlayerName, &b.LastLogin, &b.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	b.IsAuthenticated = isAuth != 0
 	return &b, nil
 }
 
 // UpsertBinding creates or updates a player binding.
-func (db *DB) UpsertBinding(gameUUID, haUserUUID, playerName string, isAuthenticated bool) error {
-	isAuth := 0
-	if isAuthenticated {
-		isAuth = 1
-	}
+func (db *DB) UpsertBinding(gameUUID, haUserUUID, playerName string) error {
 	_, err := db.conn.Exec(`
-		INSERT INTO player_bindings (game_uuid, ha_user_uuid, player_name, is_authenticated, last_login)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO player_bindings (game_uuid, ha_user_uuid, player_name, last_login)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(game_uuid) DO UPDATE SET
 			ha_user_uuid = excluded.ha_user_uuid,
 			player_name = excluded.player_name,
-			is_authenticated = excluded.is_authenticated,
 			last_login = CURRENT_TIMESTAMP
-	`, gameUUID, haUserUUID, playerName, isAuth)
+	`, gameUUID, haUserUUID, playerName)
 	return err
 }
