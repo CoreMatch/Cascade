@@ -517,6 +517,13 @@ func EncodePreRegisterResponse(handshakeID string, uuid string, clientVersion in
 	return w.Packet(TypePreregister)
 }
 
+// ModUnitDef is the minimal unit metadata needed for the customUnits block.
+type ModUnitDef struct {
+	ModName  string
+	UnitName string
+	UnitID   int32
+}
+
 // ServerInfoConfig holds the game settings needed to encode SERVER_INFO.
 type ServerInfoConfig struct {
 	MapType            int32
@@ -529,6 +536,7 @@ type ServerInfoConfig struct {
 	Income             float32
 	DisableNuke        bool
 	SharedControl      bool
+	CustomUnits        []ModUnitDef // mod units to advertise; nil = empty
 }
 
 // EncodeServerInfo generates the SERVER_INFO (type 106) packet.
@@ -553,10 +561,23 @@ func EncodeServerInfo(cfg ServerInfoConfig, clientVersion int32) Packet {
 	w.Bool(false)
 	w.Bool(true)
 
-	// Empty custom units block
+	// Custom units block
 	w.StartBlock("customUnits", false)
 	w.Int32(1)
-	w.Int32(0) // no mod units
+	w.Int32(int32(len(cfg.CustomUnits)))
+	for _, u := range cfg.CustomUnits {
+		RequireNoError(w.String(u.UnitName))
+		w.Int32(u.UnitID)
+		w.Bool(true)
+		if u.ModName == "" || u.ModName == "default" {
+			w.Bool(false) // no mod name prefix
+		} else {
+			w.Bool(true)
+			RequireNoError(w.String(u.ModName))
+		}
+		w.Int64(0)
+		w.Int64(0)
+	}
 	w.EndBlock()
 
 	w.Bool(cfg.SharedControl)

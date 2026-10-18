@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	"rwgin/internal/config"
 	"rwgin/internal/game"
+	"rwgin/internal/game/mod"
 	"rwgin/internal/protocol"
 )
 
@@ -48,14 +50,17 @@ type Manager struct {
 	mu            sync.RWMutex
 	rooms         map[string]*Room
 	availableMaps []string
+	mods          *mod.Registry
 }
 
 func NewManager(cfg config.Config) *Manager {
 	m := &Manager{
-		cfg:   cfg,
+		cfg:  cfg,
 		rooms: make(map[string]*Room),
+		mods:  mod.NewRegistry(),
 	}
 	m.scanMaps()
+	m.loadMods()
 	return m
 }
 
@@ -73,6 +78,20 @@ func (m *Manager) scanMaps() {
 			m.availableMaps = append(m.availableMaps, f.Name())
 		}
 	}
+}
+
+func (m *Manager) loadMods() {
+	if m.cfg.ModsDir == "" {
+		return
+	}
+	if err := m.mods.LoadDir(m.cfg.ModsDir); err != nil {
+		log.Printf("[mod] failed to load mods from %s: %v", m.cfg.ModsDir, err)
+	}
+}
+
+// Mods returns the mod registry.
+func (m *Manager) Mods() *mod.Registry {
+	return m.mods
 }
 
 func (m *Manager) ListMaps() []string {

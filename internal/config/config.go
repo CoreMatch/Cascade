@@ -29,6 +29,7 @@ type Config struct {
 	DefaultIncome        float32
 	DefaultMaxUnits      int
 	MapsDir              string
+	ModsDir              string
 	HeartbeatIntervalSec int
 	RegisterTimeoutSec   int
 }
@@ -48,6 +49,7 @@ type fileConfig struct {
 	DefaultIncome        float32 `yaml:"default_income"`
 	DefaultMaxUnits      int     `yaml:"default_max_units"`
 	MapsDir              string  `yaml:"maps_dir"`
+	ModsDir              string  `yaml:"mods_dir"`
 	HeartbeatIntervalSec int     `yaml:"heartbeat_interval_sec"`
 	RegisterTimeoutSec   int     `yaml:"register_timeout_sec"`
 }
@@ -114,6 +116,7 @@ func defaultFileConfig() fileConfig {
 		DefaultIncome:        1.0,
 		DefaultMaxUnits:      200,
 		MapsDir:              "assets/maps",
+		ModsDir:              "assets/mods",
 		HeartbeatIntervalSec: 2,
 		RegisterTimeoutSec:   5,
 	}
@@ -179,6 +182,7 @@ func fileConfigToConfig(fc fileConfig) Config {
 		DefaultIncome:        fc.DefaultIncome,
 		DefaultMaxUnits:      fc.DefaultMaxUnits,
 		MapsDir:              fc.MapsDir,
+		ModsDir:              fc.ModsDir,
 		HeartbeatIntervalSec: fc.HeartbeatIntervalSec,
 		RegisterTimeoutSec:   fc.RegisterTimeoutSec,
 	}
@@ -206,6 +210,9 @@ func fileConfigToConfig(fc fileConfig) Config {
 	}
 	if cfg.MapsDir == "" {
 		cfg.MapsDir = d.MapsDir
+	}
+	if cfg.ModsDir == "" {
+		cfg.ModsDir = d.ModsDir
 	}
 	// Apply defaults for zero-valued int/float fields
 	if cfg.DefaultMaxPlayers == 0 {
@@ -267,6 +274,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnv("RWGIN_MAPS_DIR"); ok {
 		cfg.MapsDir = v
+	}
+	if v, ok := lookupEnv("RWGIN_MODS_DIR"); ok {
+		cfg.ModsDir = v
 	}
 	if v, ok := lookupEnvInt("RWGIN_HEARTBEAT_SEC"); ok {
 		cfg.HeartbeatIntervalSec = v

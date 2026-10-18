@@ -420,6 +420,18 @@ func (s *Session) sendServerInfo(room *Room) error {
 		clientVersion = int32(s.server.cfg.DefaultClientVersion)
 	}
 
+	// Collect mod units from the registry
+	var customUnits []protocol.ModUnitDef
+	if mods := s.server.rooms.Mods(); mods != nil {
+		for _, u := range mods.AllUnits() {
+			customUnits = append(customUnits, protocol.ModUnitDef{
+				ModName:  u.ModName,
+				UnitName: u.UnitName,
+				UnitID:   u.UnitID,
+			})
+		}
+	}
+
 	cfg := protocol.ServerInfoConfig{
 		MapType:           0,
 		MapName:           room.MapName,
@@ -431,6 +443,7 @@ func (s *Session) sendServerInfo(room *Room) error {
 		Income:            room.Income,
 		DisableNuke:       false,
 		SharedControl:     false,
+		CustomUnits:       customUnits,
 	}
 
 	packet := protocol.EncodeServerInfo(cfg, clientVersion)
