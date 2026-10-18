@@ -32,15 +32,13 @@ type Server struct {
 	connCount atomic.Int32
 }
 
-func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *redis.Client) *Server {
+func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *redis.Client, authClient *auth.Client) *Server {
 	s := &Server{
 		cfg:    cfg,
 		logger: logger,
 		db:     db,
 		rdb:    rdb,
-	}
-	if cfg.HRPAuthURL != "" {
-		s.auth = auth.New(cfg.HRPAuthURL, cfg.HRPAuthClientID, cfg.HRPAuthClientSecret)
+		auth:   authClient,
 	}
 	s.rooms = NewManager(cfg, s)
 	return s

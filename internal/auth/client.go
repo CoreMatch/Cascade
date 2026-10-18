@@ -17,19 +17,25 @@ type Client struct {
 	baseURL      string
 	clientID     string
 	clientSecret string
+	serviceName  string
 	http         *http.Client
 
 	tokenMu    sync.Mutex
 	token      string
 	tokenExpiry time.Time
+
+	internalKeyMu sync.RWMutex
+	internalKey   string
 }
 
 // New creates a new HRPAuth core client.
-func New(baseURL, clientID, clientSecret string) *Client {
+// serviceName is used when registering with Core's /services/auth-key endpoint.
+func New(baseURL, clientID, clientSecret, serviceName string) *Client {
 	return &Client{
 		baseURL:      strings.TrimRight(baseURL, "/"),
 		clientID:     clientID,
 		clientSecret: clientSecret,
+		serviceName:  serviceName,
 		http: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -186,4 +192,70 @@ func (c *Client) VerifyCredentials(identifier, password string) (*UserInfo, erro
 		b, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(b))
 	}
+}
+
+// FetchInternalKey requests a temporary internal key from HRPAuth Core
+// via POST /services/auth-key. The key is stored in memory and used to
+// validate inbound requests from Core (X-Internal-Key header).
+func (c *Client) FetchInternalKey() error {
+	token, err := c.getToken()
+	if err != nil {
+		return fmt.Errorf("get token: %w", err)
+	}
+
+	body := map[string]string{
+		"name": c.serviceName,
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/services/auth-key", &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("auth-key request failed (status %d): %s", resp.StatusCode, string(b))
+	}
+
+	var result struct {
+		InternalKey string `json:"internal_key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	c.internalKeyMu.Lock()
+	c.internalKey = result.InternalKey
+	c.internalKeyMu.Unlock()
+
+	return nil
+}
+
+// InternalKey returns the currently stored internal key.
+func (c *Client) InternalKey() string {
+	c.internalKeyMu.RLock()
+	defer c.internalKeyMu.RUnlock()
+	return c.internalKey
+}
+
+// ValidateInternalKey checks if the given key matches the stored internal key.
+// Returns true if valid, false otherwise. Always returns false if no key is set.
+func (c *Client) ValidateInternalKey(key string) bool {
+	c.internalKeyMu.RLock()
+	defer c.internalKeyMu.RUnlock()
+	return c.internalKey != "" && c.internalKey == key
 }

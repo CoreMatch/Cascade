@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"rwgin/internal/auth"
+	"rwgin/internal/database"
 	"rwgin/internal/protocol"
 	"rwgin/internal/relay"
 )
@@ -31,7 +33,9 @@ type playerActionRequest struct {
 	PlayerID string `json:"playerId" binding:"required"`
 }
 
-func Router(rooms *relay.Manager) *gin.Engine {
+// Router creates the HTTP router with room management, account, and internal endpoints.
+// authClient may be nil if HRPAuth is not configured.
+func Router(rooms *relay.Manager, authClient *auth.Client, db database.Store) *gin.Engine {
 	engine := gin.New()
 	engine.Use(gin.Logger(), gin.Recovery())
 
@@ -198,6 +202,134 @@ func Router(rooms *relay.Manager) *gin.Engine {
 
 		c.JSON(http.StatusOK, gin.H{"players": room.Detail().Members})
 	})
+
+	// --- Account management endpoints ---
+
+	if authClient != nil {
+		// POST /api/auth/verify — verify HA credentials, returns user info
+		engine.POST("/api/auth/verify", func(c *gin.Context) {
+			var req struct {
+				Identifier string `json:"identifier" binding:"required"`
+				Password   string `json:"password" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			user, err := authClient.VerifyCredentials(req.Identifier, req.Password)
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+				return
+			}
+			if user == nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"uuid":     user.UUID,
+				"email":    user.Email,
+				"username": user.Username,
+			})
+		})
+
+		// POST /api/auth/claim — claim a proxy binding (link gameUUID to HA user)
+		engine.POST("/api/auth/claim", func(c *gin.Context) {
+			var req struct {
+				GameUUID   string `json:"gameUUID" binding:"required"`
+				HAUserUUID string `json:"haUserUUID" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+				return
+			}
+
+			if err := db.ClaimBinding(req.GameUUID, req.HAUserUUID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"success": true})
+		})
+
+		// GET /api/auth/status/:gameUUID — check binding status
+		engine.GET("/api/auth/status/:gameUUID", func(c *gin.Context) {
+			gameUUID := c.Param("gameUUID")
+
+			if db == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+				return
+			}
+
+			binding, err := db.GetBindingByGameUUID(gameUUID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if binding == nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "binding not found"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"gameUUID":   binding.GameUUID,
+				"haUserUUID": binding.HAUserUUID,
+				"playerName": binding.PlayerName,
+				"cbh":        binding.CBH,
+				"quickAuth":  binding.QuickAuth,
+				"lastLogin":  binding.LastLogin,
+			})
+		})
+	}
+
+	// --- Internal endpoints (protected by X-Internal-Key) ---
+
+	internal := engine.Group("/internal")
+	{
+		// GET /internal/heartbeat — health check for Core
+		internal.GET("/heartbeat", func(c *gin.Context) {
+			if authClient == nil || !authClient.ValidateInternalKey(c.GetHeader("X-Internal-Key")) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid internal key"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
+
+		// POST /internal/proxy-register — create a proxy binding (called by WinnerProxy etc.)
+		internal.POST("/proxy-register", func(c *gin.Context) {
+			if authClient == nil || !authClient.ValidateInternalKey(c.GetHeader("X-Internal-Key")) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid internal key"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+				return
+			}
+
+			var req struct {
+				GameUUID   string `json:"gameUUID" binding:"required"`
+				PlayerName string `json:"playerName" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			if err := db.CreateProxyBinding(req.GameUUID, req.PlayerName); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"success": true})
+		})
+	}
 
 	return engine
 }

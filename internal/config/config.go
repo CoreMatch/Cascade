@@ -40,6 +40,7 @@ type Config struct {
 	HRPAuthURL           string
 	HRPAuthClientID      string // OAuth2 client_id
 	HRPAuthClientSecret  string // OAuth2 client_secret
+	HRPAuthServiceName   string // Service name for Core /services/auth-key registration
 	HeartbeatIntervalSec int
 	RegisterTimeoutSec   int
 	ReadTimeoutSec       int
@@ -70,9 +71,10 @@ type fileConfig struct {
 	RedisPassword        string  `yaml:"redis_password"`
 	RedisDB              int     `yaml:"redis_db"`
 	RedisPrefix          string  `yaml:"redis_prefix"`
-	HRPAuthURL           string  `yaml:"hrpauth_url"`
-	HRPAuthClientID      string  `yaml:"hrpauth_client_id"`
-	HRPAuthClientSecret  string  `yaml:"hrpauth_client_secret"`
+	HRPAuthURL           string `yaml:"hrpauth_url"`
+	HRPAuthClientID      string `yaml:"hrpauth_client_id"`
+	HRPAuthClientSecret  string `yaml:"hrpauth_client_secret"`
+	HRPAuthServiceName   string `yaml:"hrpauth_service_name"`
 	HeartbeatIntervalSec int     `yaml:"heartbeat_interval_sec"`
 	RegisterTimeoutSec   int     `yaml:"register_timeout_sec"`
 	ReadTimeoutSec       int     `yaml:"read_timeout_sec"`
@@ -145,6 +147,7 @@ func defaultFileConfig() fileConfig {
 		ModsDir:              "assets/mods",
 		DBType:               "sqlite",
 		DBPath:               "data/rwgin.db",
+		HRPAuthServiceName:   "MCAGS-RW",
 		HeartbeatIntervalSec: 2,
 		RegisterTimeoutSec:   5,
 		ReadTimeoutSec:       90,
@@ -224,6 +227,7 @@ func fileConfigToConfig(fc fileConfig) Config {
 		HRPAuthURL:           fc.HRPAuthURL,
 		HRPAuthClientID:      fc.HRPAuthClientID,
 		HRPAuthClientSecret:  fc.HRPAuthClientSecret,
+		HRPAuthServiceName:   fc.HRPAuthServiceName,
 		HeartbeatIntervalSec: fc.HeartbeatIntervalSec,
 		RegisterTimeoutSec:   fc.RegisterTimeoutSec,
 		ReadTimeoutSec:       fc.ReadTimeoutSec,
@@ -354,6 +358,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnv("RWGIN_HRPAUTH_CLIENT_SECRET"); ok {
 		cfg.HRPAuthClientSecret = v
+	}
+	if v, ok := lookupEnv("RWGIN_HRPAUTH_SERVICE_NAME"); ok {
+		cfg.HRPAuthServiceName = v
 	}
 	if v, ok := lookupEnvInt("RWGIN_HEARTBEAT_SEC"); ok {
 		cfg.HeartbeatIntervalSec = v

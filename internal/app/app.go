@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"rwgin/internal/api"
+	"rwgin/internal/auth"
 	"rwgin/internal/config"
 	"rwgin/internal/database"
 	"rwgin/internal/redis"
@@ -21,6 +22,7 @@ type App struct {
 	logger     *log.Logger
 	db         database.Store
 	rdb        *redis.Client
+	authClient *auth.Client
 	gameServer *relay.Server
 	httpServer *http.Server
 }
@@ -60,10 +62,22 @@ func New(cfg config.Config, logger *log.Logger) *App {
 		}
 	}
 
-	gameServer := relay.NewServer(cfg, logger, db, rdb)
+	// Create auth client if HRPAuth is configured
+	var authClient *auth.Client
+	if cfg.HRPAuthURL != "" {
+		authClient = auth.New(cfg.HRPAuthURL, cfg.HRPAuthClientID, cfg.HRPAuthClientSecret, cfg.HRPAuthServiceName)
+		// Fetch internal key from Core for inbound request validation
+		if err := authClient.FetchInternalKey(); err != nil {
+			logger.Printf("[startup] warning: failed to fetch internal key: %v", err)
+		} else {
+			logger.Printf("[startup] internal key fetched successfully")
+		}
+	}
+
+	gameServer := relay.NewServer(cfg, logger, db, rdb, authClient)
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPListenAddr,
-		Handler: api.Router(gameServer.Rooms()),
+		Handler: api.Router(gameServer.Rooms(), authClient, db),
 	}
 
 	return &App{
@@ -71,6 +85,7 @@ func New(cfg config.Config, logger *log.Logger) *App {
 		logger:     logger,
 		db:         db,
 		rdb:        rdb,
+		authClient: authClient,
 		gameServer: gameServer,
 		httpServer: httpServer,
 	}
