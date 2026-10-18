@@ -30,6 +30,7 @@ type Config struct {
 	DefaultMaxUnits      int
 	MapsDir              string
 	ModsDir              string
+	DBPath               string
 	HeartbeatIntervalSec int
 	RegisterTimeoutSec   int
 	ReadTimeoutSec       int
@@ -53,6 +54,7 @@ type fileConfig struct {
 	DefaultMaxUnits      int     `yaml:"default_max_units"`
 	MapsDir              string  `yaml:"maps_dir"`
 	ModsDir              string  `yaml:"mods_dir"`
+	DBPath               string  `yaml:"db_path"`
 	HeartbeatIntervalSec int     `yaml:"heartbeat_interval_sec"`
 	RegisterTimeoutSec   int     `yaml:"register_timeout_sec"`
 	ReadTimeoutSec       int     `yaml:"read_timeout_sec"`
@@ -123,6 +125,7 @@ func defaultFileConfig() fileConfig {
 		DefaultMaxUnits:      200,
 		MapsDir:              "assets/maps",
 		ModsDir:              "assets/mods",
+		DBPath:               "data/rwgin.db",
 		HeartbeatIntervalSec: 2,
 		RegisterTimeoutSec:   5,
 		ReadTimeoutSec:       90,
@@ -192,6 +195,7 @@ func fileConfigToConfig(fc fileConfig) Config {
 		DefaultMaxUnits:      fc.DefaultMaxUnits,
 		MapsDir:              fc.MapsDir,
 		ModsDir:              fc.ModsDir,
+		DBPath:               fc.DBPath,
 		HeartbeatIntervalSec: fc.HeartbeatIntervalSec,
 		RegisterTimeoutSec:   fc.RegisterTimeoutSec,
 		ReadTimeoutSec:       fc.ReadTimeoutSec,
@@ -225,6 +229,9 @@ func fileConfigToConfig(fc fileConfig) Config {
 	}
 	if cfg.ModsDir == "" {
 		cfg.ModsDir = d.ModsDir
+	}
+	if cfg.DBPath == "" {
+		cfg.DBPath = d.DBPath
 	}
 	// Apply defaults for zero-valued int/float fields
 	if cfg.DefaultMaxPlayers == 0 {
@@ -298,6 +305,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnv("RWGIN_MODS_DIR"); ok {
 		cfg.ModsDir = v
+	}
+	if v, ok := lookupEnv("RWGIN_DB_PATH"); ok {
+		cfg.DBPath = v
 	}
 	if v, ok := lookupEnvInt("RWGIN_HEARTBEAT_SEC"); ok {
 		cfg.HeartbeatIntervalSec = v

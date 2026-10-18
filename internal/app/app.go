@@ -9,17 +9,24 @@ import (
 
 	"rwgin/internal/api"
 	"rwgin/internal/config"
+	"rwgin/internal/database"
 	"rwgin/internal/relay"
 )
 
 type App struct {
 	cfg        config.Config
 	logger     *log.Logger
+	db         *database.DB
 	gameServer *relay.Server
 	httpServer *http.Server
 }
 
 func New(cfg config.Config, logger *log.Logger) *App {
+	db, err := database.Open(cfg.DBPath, logger)
+	if err != nil {
+		logger.Fatalf("failed to open database: %v", err)
+	}
+
 	gameServer := relay.NewServer(cfg, logger)
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPListenAddr,
@@ -29,6 +36,7 @@ func New(cfg config.Config, logger *log.Logger) *App {
 	return &App{
 		cfg:        cfg,
 		logger:     logger,
+		db:         db,
 		gameServer: gameServer,
 		httpServer: httpServer,
 	}
