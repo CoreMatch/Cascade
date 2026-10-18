@@ -892,8 +892,8 @@ func DefaultRegistry() *CommandRegistry {
 			return
 		}
 
-		// Update binding with HA user UUID (CBH stays 0, not claimed yet)
-		if err := s.server.db.UpdateBindingHAUUID(s.playerID, user.UUID); err != nil {
+		// Claim binding: link HA user UUID and flip CBH 0→1
+		if err := s.server.db.ClaimBinding(s.playerID, user.UUID); err != nil {
 			ctx.Reply("绑定失败: " + err.Error())
 			return
 		}
