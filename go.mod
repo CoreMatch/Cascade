@@ -1,4 +1,4 @@
-module rwgin
+module cascade
 
 go 1.26.4
 

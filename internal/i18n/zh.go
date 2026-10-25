@@ -199,7 +199,7 @@ var zhMessages = map[string]string{
 	"msg.login_usage":           "用法: /login <邮箱/用户名> <密码>",
 
 	// --- Version ---
-	"msg.version": "MCAGS-RW Server v0.1.0",
+	"msg.version": "Cascade Server v0.1.0",
 
 	// --- Language ---
 	"msg.lang_changed": "语言已切换为中文。",

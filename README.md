@@ -1,8 +1,8 @@
-# MCAGS-RW
+# Cascade
 
-MCAGS-RW 是 Rusted Warfare 群组服务器的边缘反向代理。它接收客户端连接、按初始 `Preregister` 房间码选择后端、处理现有 HRPAuth 玩家认证，并在代理与独立后端之间转发原生游戏协议帧。
+Cascade 是 Rusted Warfare 群组服务器的边缘反向代理。它接收客户端连接、按初始 `Preregister` 房间码选择后端、处理现有 HRPAuth 玩家认证，并在代理与独立后端之间转发原生游戏协议帧。
 
-房间、大厅、对局和游戏协议行为由独立后端负责。本仓库不实现或维护生产后端。双方接口契约位于 [`HA-Contract/MCAGS-RW-Backend-v1.md`](HA-Contract/MCAGS-RW-Backend-v1.md)，配套 OpenAPI 位于 `HA-Contract/openapi/mcags-rw-backend-v1.yaml`。
+房间、大厅、对局和游戏协议行为由独立后端负责。本仓库不实现或维护生产后端。双方接口契约位于 [`HA-Contract/Cascade-Backend-v1.md`](HA-Contract/Cascade-Backend-v1.md)，配套 OpenAPI 位于 `HA-Contract/openapi/cascade-backend-v1.yaml`。
 
 ## 配置与运行
 
@@ -18,7 +18,7 @@ backends:
     control_url: "https://backend-a.example.net"
     game_address: "backend-a.example.net:5124"
     prefixes: ["GW"]
-proxy_issuer: "mcags-rw"
+proxy_issuer: "cascade"
 proxy_key_id: "proxy-key-2026-01"
 proxy_private_key_path: "/run/secrets/proxy-ed25519-key.pem"
 backend_client_cert: "/run/secrets/proxy-client.crt"
@@ -32,10 +32,12 @@ pending_session_timeout_sec: 5
 控制 API 和游戏 TCP 均使用 mTLS。证书、CA 和 Ed25519 PKCS#8 私钥通过受限文件挂载；客户端私钥和签名私钥权限不能允许 group/other 访问。首次试运行可执行：
 
 ```bash
-go run ./cmd/rwgin
+go run ./cmd/cascade
 ```
 
-配置从 v1 自动迁移到 v2，现有玩家数据库和认证绑定保留。默认不限制连接数；可通过 `max_connections` 设置显式上限。
+配置从 v1 自动迁移到 v2，玩家表结构与认证绑定保留。默认不限制连接数；可通过 `max_connections` 设置显式上限。
+
+> **从 MCAGS-RW 升级**：默认 SQLite 路径已改为 `data/cascade.db`，请将旧库 `data/rwgin.db` 迁移到新路径（或显式设置 `db_path`）；同时 `proxy_issuer`、`hrpauth_service_name` 与后端 preamble magic 均已变更，需与后端同步更新并重新签发令牌。
 
 ## 路由与接口
 

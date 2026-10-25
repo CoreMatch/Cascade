@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"rwgin/internal/config"
+	"cascade/internal/config"
 )
 
 type Room struct {

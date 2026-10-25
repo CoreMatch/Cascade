@@ -8,7 +8,7 @@ import (
 )
 
 func TestOpenAPIContractParsesAndDefinesCoreEndpoints(t *testing.T) {
-	data, err := os.ReadFile("../../HA-Contract/openapi/mcags-rw-backend-v1.yaml")
+	data, err := os.ReadFile("../../HA-Contract/openapi/cascade-backend-v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-package rwgin
+package cascade
 
 import "embed"
 

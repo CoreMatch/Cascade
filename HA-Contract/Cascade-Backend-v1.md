@@ -1,6 +1,6 @@
-# MCAGS-RW Backend Contract v1
+# Cascade Backend Contract v1
 
-This contract defines the boundary between the MCAGS-RW edge proxy and an
+This contract defines the boundary between the Cascade edge proxy and an
 independently developed Rusted Warfare backend. The backend owns rooms, lobby
 state, game state, and all game protocol behavior. The proxy owns client
 ingress, HRPAuth identity, route selection, and byte forwarding.
@@ -27,7 +27,7 @@ Warfare bytes:
 
 | Offset | Size | Encoding | Meaning |
 | --- | ---: | --- | --- |
-| 0 | 4 | ASCII | Magic `MCAG` |
+| 0 | 4 | ASCII | Magic `CASC` |
 | 4 | 2 | unsigned big-endian | Protocol version, `1` |
 | 6 | 2 | unsigned big-endian | Header size, `24` |
 | 8 | 16 | bytes | Cryptographically random UUIDv4 session ID |
@@ -86,7 +86,7 @@ subject, issue/expiry times, and token ID. A token ID can only be consumed once.
 ## HTTP API
 
 Base path: `/v1`. Bodies and responses use `application/json`. The OpenAPI
-document `openapi/mcags-rw-backend-v1.yaml` is the machine-readable companion.
+document `openapi/cascade-backend-v1.yaml` is the machine-readable companion.
 
 - `GET /health`: readiness of the backend control and game services.
 - `GET /rooms`: complete room ownership snapshot for this backend.

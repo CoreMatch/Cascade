@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"rwgin/internal/config"
+	"cascade/internal/config"
 )
 
 var (

@@ -7,9 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rwgin/internal/auth"
-	"rwgin/internal/backend"
-	"rwgin/internal/database"
+	"cascade/internal/auth"
+	"cascade/internal/backend"
+	"cascade/internal/database"
 )
 
 type ProxyService interface {

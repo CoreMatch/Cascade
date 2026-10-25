@@ -165,11 +165,11 @@ func defaultFileConfig() fileConfig {
 		Version:                  configVersion,
 		GameListenAddr:           ":5123",
 		HTTPListenAddr:           ":8080",
-		ServerID:                 "rwgin",
+		ServerID:                 "cascade",
 		RelayHandshakeID:         "net.rwhps.server",
 		RoomCodePrefix:           "GW",
 		DefaultMapName:           "unit_types_test.tmx",
-		DefaultRoomName:          "Gin Room",
+		DefaultRoomName:          "Cascade Room",
 		DefaultMaxPlayers:        8,
 		DefaultClientVersion:     151,
 		DefaultIncome:            1.0,
@@ -177,8 +177,8 @@ func defaultFileConfig() fileConfig {
 		MapsDir:                  "assets/maps",
 		ModsDir:                  "assets/mods",
 		DBType:                   "sqlite",
-		DBPath:                   "data/rwgin.db",
-		HRPAuthServiceName:       "MCAGS-RW",
+		DBPath:                   "data/cascade.db",
+		HRPAuthServiceName:       "Cascade",
 		HRPAuthRelayPrefix:       "/rusted-warfare",
 		HeartbeatIntervalSec:     2,
 		RegisterTimeoutSec:       5,
@@ -186,7 +186,7 @@ func defaultFileConfig() fileConfig {
 		MaxConnections:           0,
 		ChatRateLimit:            5,
 		DefaultBackendID:         "",
-		ProxyIssuer:              "mcags-rw",
+		ProxyIssuer:              "cascade",
 		ProxyKeyID:               "",
 		HealthIntervalSec:        5,
 		RoomSnapshotIntervalSec:  5,
@@ -228,7 +228,7 @@ func migrateConfig(oldVersion int, data []byte) []byte {
 		m["health_interval_sec"] = 5
 		m["room_snapshot_interval_sec"] = 5
 		m["pending_session_timeout_sec"] = 5
-		m["proxy_issuer"] = "mcags-rw"
+		m["proxy_issuer"] = "cascade"
 		out, err := yaml.Marshal(m)
 		if err != nil {
 			log.Printf("[config] migration marshal error: %v", err)
@@ -255,7 +255,7 @@ func migrateConfig(oldVersion int, data []byte) []byte {
 			m["pending_session_timeout_sec"] = 5
 		}
 		if _, ok := m["proxy_issuer"]; !ok {
-			m["proxy_issuer"] = "mcags-rw"
+			m["proxy_issuer"] = "cascade"
 		}
 		out, err := yaml.Marshal(m)
 		if err != nil {
@@ -522,7 +522,7 @@ func lookupEnvFloat32(key string) (float32, bool) {
 func randomHex(n int) string {
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
-		return "rwgin-relay"
+		return "cascade-relay"
 	}
 	return hex.EncodeToString(buf)
 }

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: MCAGS-RW Backend Contract
+  title: Cascade Backend Contract
   version: 1.0.0
-  description: Versioned control API between the MCAGS-RW proxy and an independent game backend.
+  description: Versioned control API between the Cascade proxy and an independent game backend.
 servers:
   - url: https://backend.example.invalid/v1
 security:

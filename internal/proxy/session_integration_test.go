@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"rwgin/internal/backend"
-	"rwgin/internal/config"
-	"rwgin/internal/protocol"
+	"cascade/internal/backend"
+	"cascade/internal/config"
+	"cascade/internal/protocol"
 )
 
 func TestProxyBindsRegisteredIdentityBeforeForwarding(t *testing.T) {
@@ -333,7 +333,7 @@ func makeProxyTestCA(t *testing.T) (*x509.Certificate, ed25519.PrivateKey, []byt
 	}
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "MCAGS proxy test CA"},
+		Subject:               pkix.Name{CommonName: "Cascade proxy test CA"},
 		NotBefore:             time.Now().Add(-time.Minute),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,

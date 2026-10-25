@@ -15,7 +15,7 @@ const (
 	PreambleVersion = 1
 )
 
-var preambleMagic = [4]byte{'M', 'C', 'A', 'G'}
+var preambleMagic = [4]byte{'C', 'A', 'S', 'C'}
 
 func NewSessionID() (string, error) {
 	var id [16]byte

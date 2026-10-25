@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"rwgin/internal/config"
+	"cascade/internal/config"
 )
 
 func TestNewClientRequiresHTTPSControlURL(t *testing.T) {

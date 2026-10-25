@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"rwgin/internal/auth"
-	"rwgin/internal/backend"
-	"rwgin/internal/config"
-	"rwgin/internal/database"
-	"rwgin/internal/protocol"
-	"rwgin/internal/redis"
+	"cascade/internal/auth"
+	"cascade/internal/backend"
+	"cascade/internal/config"
+	"cascade/internal/database"
+	"cascade/internal/protocol"
+	"cascade/internal/redis"
 )
 
 type Server struct {

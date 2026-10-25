@@ -11,12 +11,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"rwgin/internal/api"
-	"rwgin/internal/auth"
-	"rwgin/internal/config"
-	"rwgin/internal/database"
-	"rwgin/internal/proxy"
-	"rwgin/internal/redis"
+	"cascade/internal/api"
+	"cascade/internal/auth"
+	"cascade/internal/config"
+	"cascade/internal/database"
+	"cascade/internal/proxy"
+	"cascade/internal/redis"
 )
 
 type App struct {

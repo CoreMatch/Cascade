@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"rwgin/internal/backend"
-	"rwgin/internal/protocol"
+	"cascade/internal/backend"
+	"cascade/internal/protocol"
 )
 
 func TestSessionForwardsOpaqueFramesBothDirections(t *testing.T) {

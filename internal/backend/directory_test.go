@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"rwgin/internal/config"
+	"cascade/internal/config"
 )
 
 func TestRouteRoomUsesSnapshotThenPrefixThenDefault(t *testing.T) {

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"rwgin/internal/config"
+	"cascade/internal/config"
 )
 
 func TestBackendClientUsesMTLSForControlAndGameTransports(t *testing.T) {
@@ -127,7 +127,7 @@ func makeTestCA(t *testing.T) (*x509.Certificate, ed25519.PrivateKey, []byte) {
 	}
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "MCAGS test CA"},
+		Subject:               pkix.Name{CommonName: "Cascade test CA"},
 		NotBefore:             time.Now().Add(-time.Minute),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,

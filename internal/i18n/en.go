@@ -199,7 +199,7 @@ var enMessages = map[string]string{
 	"msg.login_usage":           "Usage: /login <email/username> <password>",
 
 	// --- Version ---
-	"msg.version": "MCAGS-RW Server v0.1.0",
+	"msg.version": "Cascade Server v0.1.0",
 
 	// --- Language ---
 	"msg.lang_changed": "Language changed to English.",
