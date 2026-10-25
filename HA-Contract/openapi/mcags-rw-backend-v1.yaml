@@ -1,0 +1,291 @@
+openapi: 3.1.0
+info:
+  title: MCAGS-RW Backend Contract
+  version: 1.0.0
+  description: Versioned control API between the MCAGS-RW proxy and an independent game backend.
+servers:
+  - url: https://backend.example.invalid/v1
+security:
+  - mutualTLS: []
+paths:
+  /health:
+    get:
+      operationId: getBackendHealth
+      responses:
+        "200":
+          description: Backend control and game listeners are ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [backendId, status]
+                properties:
+                  backendId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [ready, not_ready]
+        "503":
+          $ref: "#/components/responses/BackendError"
+  /rooms:
+    get:
+      operationId: listBackendRooms
+      responses:
+        "200":
+          description: Full authoritative ownership snapshot for this backend.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomSnapshot"
+        "503":
+          $ref: "#/components/responses/BackendError"
+  /sessions/{sessionID}/identity:
+    put:
+      operationId: bindSessionIdentity
+      parameters:
+        - $ref: "#/components/parameters/SessionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: EdDSA-signed, single-use JWT described in the contract.
+      responses:
+        "204":
+          description: Identity bound, or an exact idempotent retry was accepted.
+        "400":
+          $ref: "#/components/responses/BackendError"
+        "404":
+          $ref: "#/components/responses/BackendError"
+        "409":
+          $ref: "#/components/responses/BackendError"
+        "410":
+          $ref: "#/components/responses/BackendError"
+        "503":
+          $ref: "#/components/responses/BackendError"
+  /rooms/{code}:
+    get:
+      operationId: getRoom
+      parameters:
+        - $ref: "#/components/parameters/RoomCode"
+      responses:
+        "200":
+          description: Room details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDetail"
+        "404":
+          $ref: "#/components/responses/BackendError"
+    delete:
+      operationId: deleteRoom
+      parameters:
+        - $ref: "#/components/parameters/RoomCode"
+      responses:
+        "204":
+          description: Room deleted.
+        "404":
+          $ref: "#/components/responses/BackendError"
+  /rooms/create:
+    post:
+      operationId: createRoom
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                title:
+                  type: string
+                maxPlayers:
+                  type: integer
+                  minimum: 1
+      responses:
+        "201":
+          description: Room created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomSummary"
+        "409":
+          $ref: "#/components/responses/BackendError"
+  /rooms/{code}/settings:
+    put:
+      operationId: updateRoomSettings
+      parameters:
+        - $ref: "#/components/parameters/RoomCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Updated room.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomSummary"
+        "404":
+          $ref: "#/components/responses/BackendError"
+  /rooms/{code}/kick:
+    post:
+      operationId: kickPlayer
+      parameters:
+        - $ref: "#/components/parameters/RoomCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayerAction"
+      responses:
+        "204":
+          description: Player disconnected.
+        "404":
+          $ref: "#/components/responses/BackendError"
+  /rooms/{code}/ban:
+    post:
+      operationId: banPlayer
+      parameters:
+        - $ref: "#/components/parameters/RoomCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayerAction"
+      responses:
+        "204":
+          description: Player banned and disconnected.
+        "404":
+          $ref: "#/components/responses/BackendError"
+  /rooms/{code}/players:
+    get:
+      operationId: listRoomPlayers
+      parameters:
+        - $ref: "#/components/parameters/RoomCode"
+      responses:
+        "200":
+          description: Current room players.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [players]
+                properties:
+                  players:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "404":
+          $ref: "#/components/responses/BackendError"
+components:
+  securitySchemes:
+    mutualTLS:
+      type: mutualTLS
+  parameters:
+    SessionID:
+      name: sessionID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RoomCode:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    RoomSummary:
+      type: object
+      required:
+        - code
+        - title
+        - mapName
+        - maxPlayers
+        - players
+        - inGame
+        - ownerId
+        - ownerName
+        - adminCount
+        - createdAt
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        mapName:
+          type: string
+        maxPlayers:
+          type: integer
+        players:
+          type: integer
+        inGame:
+          type: boolean
+        ownerId:
+          type: string
+        ownerName:
+          type: string
+        adminCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      additionalProperties: true
+    RoomDetail:
+      allOf:
+        - $ref: "#/components/schemas/RoomSummary"
+        - type: object
+          required: [members]
+          properties:
+            members:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+    RoomSnapshot:
+      type: object
+      required: [backendId, generatedAt, rooms]
+      properties:
+        backendId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        rooms:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomSummary"
+    PlayerAction:
+      type: object
+      required: [playerId]
+      properties:
+        playerId:
+          type: string
+  responses:
+    BackendError:
+      description: Stable backend error response.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code, message]
+            properties:
+              code:
+                type: string
+              message:
+                type: string

@@ -11,77 +11,106 @@ import (
 )
 
 const (
-	configVersion   = 1
-	configFilePath  = "config.yaml"
+	configVersion  = 2
+	configFilePath = "config.yaml"
 )
+
+type BackendConfig struct {
+	ID          string   `yaml:"id" json:"id"`
+	ControlURL  string   `yaml:"control_url" json:"controlUrl"`
+	GameAddress string   `yaml:"game_address" json:"gameAddress"`
+	Prefixes    []string `yaml:"prefixes" json:"prefixes"`
+}
 
 // Config holds all runtime configuration.
 type Config struct {
-	GameListenAddr       string
-	HTTPListenAddr       string
-	ServerID             string
-	RelayHandshakeID     string
-	RoomCodePrefix       string
-	DefaultMapName       string
-	DefaultRoomName      string
-	DefaultMaxPlayers    int
-	DefaultClientVersion int
-	DefaultIncome        float32
-	DefaultMaxUnits      int
-	MapsDir              string
-	ModsDir              string
-	DBType               string // "sqlite" or "mysql"
-	DBPath               string // SQLite path (used when DBType=sqlite)
-	MySQLDSN             string // MySQL DSN (used when DBType=mysql), e.g. "user:pass@tcp(host:3306)/dbname?parseTime=true"
-	RedisAddr            string
-	RedisPassword        string
-	RedisDB              int
-	RedisPrefix          string
-	HRPAuthURL           string
-	HRPAuthClientID      string // OAuth2 client_id
-	HRPAuthClientSecret  string // OAuth2 client_secret
-	HRPAuthServiceName   string // Service name for Core /services/auth-key registration
-	HRPAuthRelayPrefix   string // Relay path prefix for Core gateway (e.g. /rusted-warfare)
-	HeartbeatIntervalSec int
-	RegisterTimeoutSec   int
-	ReadTimeoutSec       int
-	MaxConnections       int
-	ChatRateLimit        int // max messages per second per player
+	GameListenAddr           string
+	HTTPListenAddr           string
+	ServerID                 string
+	RelayHandshakeID         string
+	RoomCodePrefix           string
+	DefaultMapName           string
+	DefaultRoomName          string
+	DefaultMaxPlayers        int
+	DefaultClientVersion     int
+	DefaultIncome            float32
+	DefaultMaxUnits          int
+	MapsDir                  string
+	ModsDir                  string
+	DBType                   string // "sqlite" or "mysql"
+	DBPath                   string // SQLite path (used when DBType=sqlite)
+	MySQLDSN                 string // MySQL DSN (used when DBType=mysql), e.g. "user:pass@tcp(host:3306)/dbname?parseTime=true"
+	RedisAddr                string
+	RedisPassword            string
+	RedisDB                  int
+	RedisPrefix              string
+	HRPAuthURL               string
+	HRPAuthClientID          string // OAuth2 client_id
+	HRPAuthClientSecret      string // OAuth2 client_secret
+	HRPAuthServiceName       string // Service name for Core /services/auth-key registration
+	HRPAuthRelayPrefix       string // Relay path prefix for Core gateway (e.g. /rusted-warfare)
+	HeartbeatIntervalSec     int
+	RegisterTimeoutSec       int
+	ReadTimeoutSec           int
+	MaxConnections           int
+	ChatRateLimit            int // max messages per second per player
+	DefaultBackendID         string
+	Backends                 []BackendConfig
+	ProxyIssuer              string
+	ProxyKeyID               string
+	ProxyPrivateKeyPath      string
+	BackendClientCert        string
+	BackendClientKey         string
+	BackendCAPool            string
+	HealthIntervalSec        int
+	RoomSnapshotIntervalSec  int
+	PendingSessionTimeoutSec int
 }
 
 // fileConfig mirrors the YAML structure, with a Version field for migration.
 type fileConfig struct {
-	Version              int     `yaml:"version"`
-	GameListenAddr       string  `yaml:"game_listen_addr"`
-	HTTPListenAddr       string  `yaml:"http_listen_addr"`
-	ServerID             string  `yaml:"server_id"`
-	RelayHandshakeID     string  `yaml:"relay_handshake_id"`
-	RoomCodePrefix       string  `yaml:"room_code_prefix"`
-	DefaultMapName       string  `yaml:"default_map_name"`
-	DefaultRoomName      string  `yaml:"default_room_name"`
-	DefaultMaxPlayers    int     `yaml:"default_max_players"`
-	DefaultClientVersion int     `yaml:"default_client_version"`
-	DefaultIncome        float32 `yaml:"default_income"`
-	DefaultMaxUnits      int     `yaml:"default_max_units"`
-	MapsDir              string  `yaml:"maps_dir"`
-	ModsDir              string  `yaml:"mods_dir"`
-	DBType               string  `yaml:"db_type"`
-	DBPath               string  `yaml:"db_path"`
-	MySQLDSN             string  `yaml:"mysql_dsn"`
-	RedisAddr            string  `yaml:"redis_addr"`
-	RedisPassword        string  `yaml:"redis_password"`
-	RedisDB              int     `yaml:"redis_db"`
-	RedisPrefix          string  `yaml:"redis_prefix"`
-	HRPAuthURL           string `yaml:"hrpauth_url"`
-	HRPAuthClientID      string `yaml:"hrpauth_client_id"`
-	HRPAuthClientSecret  string `yaml:"hrpauth_client_secret"`
-	HRPAuthServiceName   string `yaml:"hrpauth_service_name"`
-	HRPAuthRelayPrefix   string `yaml:"hrpauth_relay_prefix"`
-	HeartbeatIntervalSec int     `yaml:"heartbeat_interval_sec"`
-	RegisterTimeoutSec   int     `yaml:"register_timeout_sec"`
-	ReadTimeoutSec       int     `yaml:"read_timeout_sec"`
-	MaxConnections       int     `yaml:"max_connections"`
-	ChatRateLimit        int     `yaml:"chat_rate_limit"`
+	Version                  int             `yaml:"version"`
+	GameListenAddr           string          `yaml:"game_listen_addr"`
+	HTTPListenAddr           string          `yaml:"http_listen_addr"`
+	ServerID                 string          `yaml:"server_id"`
+	RelayHandshakeID         string          `yaml:"relay_handshake_id"`
+	RoomCodePrefix           string          `yaml:"room_code_prefix"`
+	DefaultMapName           string          `yaml:"default_map_name"`
+	DefaultRoomName          string          `yaml:"default_room_name"`
+	DefaultMaxPlayers        int             `yaml:"default_max_players"`
+	DefaultClientVersion     int             `yaml:"default_client_version"`
+	DefaultIncome            float32         `yaml:"default_income"`
+	DefaultMaxUnits          int             `yaml:"default_max_units"`
+	MapsDir                  string          `yaml:"maps_dir"`
+	ModsDir                  string          `yaml:"mods_dir"`
+	DBType                   string          `yaml:"db_type"`
+	DBPath                   string          `yaml:"db_path"`
+	MySQLDSN                 string          `yaml:"mysql_dsn"`
+	RedisAddr                string          `yaml:"redis_addr"`
+	RedisPassword            string          `yaml:"redis_password"`
+	RedisDB                  int             `yaml:"redis_db"`
+	RedisPrefix              string          `yaml:"redis_prefix"`
+	HRPAuthURL               string          `yaml:"hrpauth_url"`
+	HRPAuthClientID          string          `yaml:"hrpauth_client_id"`
+	HRPAuthClientSecret      string          `yaml:"hrpauth_client_secret"`
+	HRPAuthServiceName       string          `yaml:"hrpauth_service_name"`
+	HRPAuthRelayPrefix       string          `yaml:"hrpauth_relay_prefix"`
+	HeartbeatIntervalSec     int             `yaml:"heartbeat_interval_sec"`
+	RegisterTimeoutSec       int             `yaml:"register_timeout_sec"`
+	ReadTimeoutSec           int             `yaml:"read_timeout_sec"`
+	MaxConnections           int             `yaml:"max_connections"`
+	ChatRateLimit            int             `yaml:"chat_rate_limit"`
+	DefaultBackendID         string          `yaml:"default_backend_id"`
+	Backends                 []BackendConfig `yaml:"backends"`
+	ProxyIssuer              string          `yaml:"proxy_issuer"`
+	ProxyKeyID               string          `yaml:"proxy_key_id"`
+	ProxyPrivateKeyPath      string          `yaml:"proxy_private_key_path"`
+	BackendClientCert        string          `yaml:"backend_client_cert"`
+	BackendClientKey         string          `yaml:"backend_client_key"`
+	BackendCAPool            string          `yaml:"backend_ca_pool"`
+	HealthIntervalSec        int             `yaml:"health_interval_sec"`
+	RoomSnapshotIntervalSec  int             `yaml:"room_snapshot_interval_sec"`
+	PendingSessionTimeoutSec int             `yaml:"pending_session_timeout_sec"`
 }
 
 // Load reads config.yaml (creating/migrating as needed), then overlays env vars.
@@ -133,29 +162,35 @@ func loadOrCreateFile() fileConfig {
 // defaultFileConfig returns a fileConfig populated with defaults at the current version.
 func defaultFileConfig() fileConfig {
 	return fileConfig{
-		Version:              configVersion,
-		GameListenAddr:       ":5123",
-		HTTPListenAddr:       ":8080",
-		ServerID:             "rwgin",
-		RelayHandshakeID:     "net.rwhps.server",
-		RoomCodePrefix:       "GW",
-		DefaultMapName:       "unit_types_test.tmx",
-		DefaultRoomName:      "Gin Room",
-		DefaultMaxPlayers:    8,
-		DefaultClientVersion: 151,
-		DefaultIncome:        1.0,
-		DefaultMaxUnits:      200,
-		MapsDir:              "assets/maps",
-		ModsDir:              "assets/mods",
-		DBType:               "sqlite",
-		DBPath:               "data/rwgin.db",
-		HRPAuthServiceName:   "MCAGS-RW",
-		HRPAuthRelayPrefix:   "/rusted-warfare",
-		HeartbeatIntervalSec: 2,
-		RegisterTimeoutSec:   5,
-		ReadTimeoutSec:       90,
-		MaxConnections:       200,
-		ChatRateLimit:        5,
+		Version:                  configVersion,
+		GameListenAddr:           ":5123",
+		HTTPListenAddr:           ":8080",
+		ServerID:                 "rwgin",
+		RelayHandshakeID:         "net.rwhps.server",
+		RoomCodePrefix:           "GW",
+		DefaultMapName:           "unit_types_test.tmx",
+		DefaultRoomName:          "Gin Room",
+		DefaultMaxPlayers:        8,
+		DefaultClientVersion:     151,
+		DefaultIncome:            1.0,
+		DefaultMaxUnits:          200,
+		MapsDir:                  "assets/maps",
+		ModsDir:                  "assets/mods",
+		DBType:                   "sqlite",
+		DBPath:                   "data/rwgin.db",
+		HRPAuthServiceName:       "MCAGS-RW",
+		HRPAuthRelayPrefix:       "/rusted-warfare",
+		HeartbeatIntervalSec:     2,
+		RegisterTimeoutSec:       5,
+		ReadTimeoutSec:           90,
+		MaxConnections:           0,
+		ChatRateLimit:            5,
+		DefaultBackendID:         "",
+		ProxyIssuer:              "mcags-rw",
+		ProxyKeyID:               "",
+		HealthIntervalSec:        5,
+		RoomSnapshotIntervalSec:  5,
+		PendingSessionTimeoutSec: 5,
 	}
 }
 
@@ -176,19 +211,51 @@ func saveToFile(fc fileConfig) {
 func migrateConfig(oldVersion int, data []byte) []byte {
 	switch oldVersion {
 	case 0:
-		// Version 0 -> 1: add heartbeat_interval_sec and register_timeout_sec
-		log.Printf("[config] migrating from v0 to v1: adding heartbeat_interval_sec, register_timeout_sec")
+		log.Printf("[config] migrating from v0 to v2")
 		var m map[string]any
 		if err := yaml.Unmarshal(data, &m); err != nil {
 			log.Printf("[config] migration unmarshal error: %v", err)
 			return data
 		}
-		m["version"] = 1
+		m["version"] = 2
 		if _, ok := m["heartbeat_interval_sec"]; !ok {
 			m["heartbeat_interval_sec"] = 2
 		}
 		if _, ok := m["register_timeout_sec"]; !ok {
 			m["register_timeout_sec"] = 5
+		}
+		m["backends"] = []any{}
+		m["health_interval_sec"] = 5
+		m["room_snapshot_interval_sec"] = 5
+		m["pending_session_timeout_sec"] = 5
+		m["proxy_issuer"] = "mcags-rw"
+		out, err := yaml.Marshal(m)
+		if err != nil {
+			log.Printf("[config] migration marshal error: %v", err)
+			return data
+		}
+		return out
+	case 1:
+		var m map[string]any
+		if err := yaml.Unmarshal(data, &m); err != nil {
+			log.Printf("[config] migration unmarshal error: %v", err)
+			return data
+		}
+		m["version"] = 2
+		if _, ok := m["backends"]; !ok {
+			m["backends"] = []any{}
+		}
+		if _, ok := m["health_interval_sec"]; !ok {
+			m["health_interval_sec"] = 5
+		}
+		if _, ok := m["room_snapshot_interval_sec"]; !ok {
+			m["room_snapshot_interval_sec"] = 5
+		}
+		if _, ok := m["pending_session_timeout_sec"]; !ok {
+			m["pending_session_timeout_sec"] = 5
+		}
+		if _, ok := m["proxy_issuer"]; !ok {
+			m["proxy_issuer"] = "mcags-rw"
 		}
 		out, err := yaml.Marshal(m)
 		if err != nil {
@@ -207,36 +274,47 @@ func migrateConfig(oldVersion int, data []byte) []byte {
 func fileConfigToConfig(fc fileConfig) Config {
 	d := defaultFileConfig()
 	cfg := Config{
-		GameListenAddr:       fc.GameListenAddr,
-		HTTPListenAddr:       fc.HTTPListenAddr,
-		ServerID:             fc.ServerID,
-		RelayHandshakeID:     fc.RelayHandshakeID,
-		RoomCodePrefix:       fc.RoomCodePrefix,
-		DefaultMapName:       fc.DefaultMapName,
-		DefaultRoomName:      fc.DefaultRoomName,
-		DefaultMaxPlayers:    fc.DefaultMaxPlayers,
-		DefaultClientVersion: fc.DefaultClientVersion,
-		DefaultIncome:        fc.DefaultIncome,
-		DefaultMaxUnits:      fc.DefaultMaxUnits,
-		MapsDir:              fc.MapsDir,
-		ModsDir:              fc.ModsDir,
-		DBType:               fc.DBType,
-		DBPath:               fc.DBPath,
-		MySQLDSN:             fc.MySQLDSN,
-		RedisAddr:            fc.RedisAddr,
-		RedisPassword:        fc.RedisPassword,
-		RedisDB:              fc.RedisDB,
-		RedisPrefix:          fc.RedisPrefix,
-		HRPAuthURL:           fc.HRPAuthURL,
-		HRPAuthClientID:      fc.HRPAuthClientID,
-		HRPAuthClientSecret:  fc.HRPAuthClientSecret,
-		HRPAuthServiceName:   fc.HRPAuthServiceName,
-		HRPAuthRelayPrefix:   fc.HRPAuthRelayPrefix,
-		HeartbeatIntervalSec: fc.HeartbeatIntervalSec,
-		RegisterTimeoutSec:   fc.RegisterTimeoutSec,
-		ReadTimeoutSec:       fc.ReadTimeoutSec,
-		MaxConnections:       fc.MaxConnections,
-		ChatRateLimit:        fc.ChatRateLimit,
+		GameListenAddr:           fc.GameListenAddr,
+		HTTPListenAddr:           fc.HTTPListenAddr,
+		ServerID:                 fc.ServerID,
+		RelayHandshakeID:         fc.RelayHandshakeID,
+		RoomCodePrefix:           fc.RoomCodePrefix,
+		DefaultMapName:           fc.DefaultMapName,
+		DefaultRoomName:          fc.DefaultRoomName,
+		DefaultMaxPlayers:        fc.DefaultMaxPlayers,
+		DefaultClientVersion:     fc.DefaultClientVersion,
+		DefaultIncome:            fc.DefaultIncome,
+		DefaultMaxUnits:          fc.DefaultMaxUnits,
+		MapsDir:                  fc.MapsDir,
+		ModsDir:                  fc.ModsDir,
+		DBType:                   fc.DBType,
+		DBPath:                   fc.DBPath,
+		MySQLDSN:                 fc.MySQLDSN,
+		RedisAddr:                fc.RedisAddr,
+		RedisPassword:            fc.RedisPassword,
+		RedisDB:                  fc.RedisDB,
+		RedisPrefix:              fc.RedisPrefix,
+		HRPAuthURL:               fc.HRPAuthURL,
+		HRPAuthClientID:          fc.HRPAuthClientID,
+		HRPAuthClientSecret:      fc.HRPAuthClientSecret,
+		HRPAuthServiceName:       fc.HRPAuthServiceName,
+		HRPAuthRelayPrefix:       fc.HRPAuthRelayPrefix,
+		HeartbeatIntervalSec:     fc.HeartbeatIntervalSec,
+		RegisterTimeoutSec:       fc.RegisterTimeoutSec,
+		ReadTimeoutSec:           fc.ReadTimeoutSec,
+		MaxConnections:           fc.MaxConnections,
+		ChatRateLimit:            fc.ChatRateLimit,
+		DefaultBackendID:         fc.DefaultBackendID,
+		Backends:                 fc.Backends,
+		ProxyIssuer:              fc.ProxyIssuer,
+		ProxyKeyID:               fc.ProxyKeyID,
+		ProxyPrivateKeyPath:      fc.ProxyPrivateKeyPath,
+		BackendClientCert:        fc.BackendClientCert,
+		BackendClientKey:         fc.BackendClientKey,
+		BackendCAPool:            fc.BackendCAPool,
+		HealthIntervalSec:        fc.HealthIntervalSec,
+		RoomSnapshotIntervalSec:  fc.RoomSnapshotIntervalSec,
+		PendingSessionTimeoutSec: fc.PendingSessionTimeoutSec,
 	}
 	// Apply defaults for zero-valued string fields
 	if cfg.GameListenAddr == "" {
@@ -294,11 +372,20 @@ func fileConfigToConfig(fc fileConfig) Config {
 	if cfg.ReadTimeoutSec == 0 {
 		cfg.ReadTimeoutSec = d.ReadTimeoutSec
 	}
-	if cfg.MaxConnections == 0 {
-		cfg.MaxConnections = d.MaxConnections
-	}
 	if cfg.ChatRateLimit == 0 {
 		cfg.ChatRateLimit = d.ChatRateLimit
+	}
+	if cfg.ProxyIssuer == "" {
+		cfg.ProxyIssuer = d.ProxyIssuer
+	}
+	if cfg.HealthIntervalSec == 0 {
+		cfg.HealthIntervalSec = d.HealthIntervalSec
+	}
+	if cfg.RoomSnapshotIntervalSec == 0 {
+		cfg.RoomSnapshotIntervalSec = d.RoomSnapshotIntervalSec
+	}
+	if cfg.PendingSessionTimeoutSec == 0 {
+		cfg.PendingSessionTimeoutSec = d.PendingSessionTimeoutSec
 	}
 	return cfg
 }
@@ -384,6 +471,27 @@ func applyEnvOverrides(cfg *Config) {
 	if v, ok := lookupEnvInt("RWGIN_CHAT_RATE_LIMIT"); ok {
 		cfg.ChatRateLimit = v
 	}
+	if v, ok := lookupEnv("RWGIN_DEFAULT_BACKEND_ID"); ok {
+		cfg.DefaultBackendID = v
+	}
+	if v, ok := lookupEnv("RWGIN_PROXY_KEY_ID"); ok {
+		cfg.ProxyKeyID = v
+	}
+	if v, ok := lookupEnv("RWGIN_PROXY_PRIVATE_KEY"); ok {
+		cfg.ProxyPrivateKeyPath = v
+	}
+	if v, ok := lookupEnv("RWGIN_BACKEND_CLIENT_CERT"); ok {
+		cfg.BackendClientCert = v
+	}
+	if v, ok := lookupEnv("RWGIN_BACKEND_CLIENT_KEY"); ok {
+		cfg.BackendClientKey = v
+	}
+	if v, ok := lookupEnv("RWGIN_BACKEND_CA"); ok {
+		cfg.BackendCAPool = v
+	}
+	if v, ok := lookupEnv("RWGIN_PROXY_ISSUER"); ok {
+		cfg.ProxyIssuer = v
+	}
 }
 
 func lookupEnv(key string) (string, bool) {
@@ -418,4 +526,3 @@ func randomHex(n int) string {
 	}
 	return hex.EncodeToString(buf)
 }
-

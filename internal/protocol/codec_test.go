@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -11,6 +12,25 @@ func TestEncodeKick(t *testing.T) {
 	}
 	if len(p.Body) == 0 {
 		t.Error("expected non-empty body")
+	}
+}
+
+func TestReadPacketRawPreservesFrame(t *testing.T) {
+	packet := Packet{Type: TypeGameCommand, Body: []byte{0x01, 0x02, 0xff}}
+	var encoded bytes.Buffer
+	if err := WritePacket(&encoded, packet); err != nil {
+		t.Fatal(err)
+	}
+	expected := append([]byte(nil), encoded.Bytes()...)
+	decoded, raw, err := ReadPacketRaw(bytes.NewReader(expected))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Type != packet.Type || !bytes.Equal(decoded.Body, packet.Body) {
+		t.Fatalf("decoded packet mismatch: %+v", decoded)
+	}
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("raw frame changed: got %x, want %x", raw, expected)
 	}
 }
 

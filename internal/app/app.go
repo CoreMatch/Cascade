@@ -15,19 +15,19 @@ import (
 	"rwgin/internal/auth"
 	"rwgin/internal/config"
 	"rwgin/internal/database"
+	"rwgin/internal/proxy"
 	"rwgin/internal/redis"
-	"rwgin/internal/relay"
 )
 
 type App struct {
-	cfg        config.Config
-	logger     *log.Logger
-	db         database.Store
-	rdb        *redis.Client
-	authClient *auth.Client
-	gameServer *relay.Server
-	httpServer *http.Server
-	sdkFS      embed.FS
+	cfg         config.Config
+	logger      *log.Logger
+	db          database.Store
+	rdb         *redis.Client
+	authClient  *auth.Client
+	proxyServer *proxy.Server
+	httpServer  *http.Server
+	sdkFS       embed.FS
 }
 
 func New(cfg config.Config, logger *log.Logger, sdkFS embed.FS) *App {
@@ -77,21 +77,24 @@ func New(cfg config.Config, logger *log.Logger, sdkFS embed.FS) *App {
 		}
 	}
 
-	gameServer := relay.NewServer(cfg, logger, db, rdb, authClient)
+	proxyServer, err := proxy.NewServer(cfg, logger, db, rdb, authClient)
+	if err != nil {
+		logger.Fatalf("failed to initialize proxy: %v", err)
+	}
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPListenAddr,
-		Handler: api.Router(gameServer.Rooms(), authClient, db),
+		Handler: api.ProxyRouter(proxyServer, authClient, db),
 	}
 
 	return &App{
-		cfg:        cfg,
-		logger:     logger,
-		db:         db,
-		rdb:        rdb,
-		authClient: authClient,
-		gameServer: gameServer,
-		httpServer: httpServer,
-		sdkFS:      sdkFS,
+		cfg:         cfg,
+		logger:      logger,
+		db:          db,
+		rdb:         rdb,
+		authClient:  authClient,
+		proxyServer: proxyServer,
+		httpServer:  httpServer,
+		sdkFS:       sdkFS,
 	}
 }
 
@@ -116,8 +119,8 @@ func (a *App) Run(ctx context.Context) error {
 	}()
 
 	go func() {
-		if err := a.gameServer.ListenAndServe(ctx); err != nil {
-			errCh <- fmt.Errorf("game server: %w", err)
+		if err := a.proxyServer.Run(ctx); err != nil {
+			errCh <- fmt.Errorf("proxy server: %w", err)
 		}
 	}()
 

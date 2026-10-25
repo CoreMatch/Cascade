@@ -9,23 +9,33 @@ import (
 const maxPacketSize = 50 * 1024 * 1024
 
 func ReadPacket(r io.Reader) (Packet, error) {
+	packet, _, err := ReadPacketRaw(r)
+	return packet, err
+}
+
+// ReadPacketRaw reads one framed packet and also returns its original bytes.
+// The proxy uses the raw frame to preserve client/backend protocol data exactly.
+func ReadPacketRaw(r io.Reader) (Packet, []byte, error) {
 	var header [8]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return Packet{}, err
+		return Packet{}, nil, err
 	}
 
 	length := int(binary.BigEndian.Uint32(header[0:4]))
 	packetType := int32(binary.BigEndian.Uint32(header[4:8]))
 	if length < 0 || length > maxPacketSize {
-		return Packet{}, fmt.Errorf("invalid packet length: %d", length)
+		return Packet{}, nil, fmt.Errorf("invalid packet length: %d", length)
 	}
 
 	body := make([]byte, length)
 	if _, err := io.ReadFull(r, body); err != nil {
-		return Packet{}, err
+		return Packet{}, nil, err
 	}
 
-	return Packet{Type: packetType, Body: body}, nil
+	raw := make([]byte, 0, len(header)+len(body))
+	raw = append(raw, header[:]...)
+	raw = append(raw, body...)
+	return Packet{Type: packetType, Body: body}, raw, nil
 }
 
 func WritePacket(w io.Writer, packet Packet) error {
