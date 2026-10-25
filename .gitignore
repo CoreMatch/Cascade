@@ -1,0 +1,24 @@
+# Runtime configuration and data (created on first start)
+config.yaml
+data/
+
+# Build output
+/cascade
+/rwgin
+/cmd/cascade/cascade
+*.exe
+*.test
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Local tooling state
+.workbuddy-ai/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
