@@ -26,9 +26,16 @@ type DBConfig struct {
 
 // NewGORMStore creates a new GORMStore with the given configuration.
 func NewGORMStore(cfg DBConfig, appLogger *log.Logger) (*GORMStore, error) {
-	// Run golang-migrate migrations first
+	// golang-migrate owns the schema. GORM AutoMigrate is only a fallback for
+	// when migrations cannot run (for example a missing migrations directory).
+	// Running it on a schema created by the SQL migrations is unsafe: the
+	// sqlite driver parses CREATE TABLE DDL to diff columns, and a table-level
+	// UNIQUE(...) constraint is misread as a column, so any table rebuild fails
+	// with "table ...__temp has no column named UNIQUE".
+	migrated := true
 	if err := RunMigrationsForDB(cfg.Type, cfg.DSN, appLogger); err != nil {
 		appLogger.Printf("[db] warning: golang-migrate failed: %v, falling back to GORM AutoMigrate", err)
+		migrated = false
 	}
 
 	var dialector gorm.Dialector
@@ -62,9 +69,11 @@ func NewGORMStore(cfg DBConfig, appLogger *log.Logger) (*GORMStore, error) {
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 	}
 
-	// Auto-migrate the schema (handles additive changes)
-	if err := db.AutoMigrate(&Player{}, &PlayerBinding{}); err != nil {
-		return nil, fmt.Errorf("auto migrate: %w", err)
+	// Only fall back to AutoMigrate when the versioned migrations did not run.
+	if !migrated {
+		if err := db.AutoMigrate(&Player{}, &PlayerBinding{}); err != nil {
+			return nil, fmt.Errorf("auto migrate: %w", err)
+		}
 	}
 
 	appLogger.Printf("[db] connected to %s database", cfg.Type)
