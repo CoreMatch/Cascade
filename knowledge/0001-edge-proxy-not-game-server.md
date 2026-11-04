@@ -75,7 +75,7 @@ Author disposition of the remaining items (2026-11-05, "无用的就清；能便
 接上的功能缺口就接"):
 
 - `database.Store.CleanupStaleProxyBindings` — **wired up** (commit
-  `ec9d9e0`): `bindingCleanupLoop` in `internal/app/cleanup.go` runs it on
+  `ec9d9e0`): `internal/app/cleanup.go::bindingCleanupLoop` runs it on
   a 24-hour tick started from `app.Run`, with its own error handling (a
   failed pass logs at error level and retries next tick; it never affects
   the presence loop or request path). Covered by loop tests plus a real
@@ -135,7 +135,7 @@ plus the real end-to-end `TestCascadeRealProxyE2E` afterwards.
 - Commit `69faeb7` "refactor!: rename project to Cascade": module/binary
   rename and preamble magic `MCAG` → `CASC`, flagged as BREAKING CHANGE
   (verified via `git show`).
-- `README.md:3-5` — positioning: edge reverse proxy; backends own rooms,
+- `README.md:L3-L5` — positioning: edge reverse proxy; backends own rooms,
   lobby, and game protocol behavior; this repository does not implement or
   maintain a production backend.
 - HA-Contract repository, `docs/dev/Cascade/Cascade-Backend-v1.md`,
@@ -145,7 +145,8 @@ plus the real end-to-end `TestCascadeRealProxyE2E` afterwards.
   — were present at 99/113/150 lines; repository-wide search for
   `cascade/internal/game` returned no imports (verified 2026-11-04,
   re-verified 2026-11-05). **Deleted in `9801368`.**
-- `internal/game/map.go:7` — was the sole repository import of
+- `internal/game/map.go:L7 @ 730d347` (the commit before the deletion
+  commit `9801368`) — was the sole repository import of
   `github.com/lafriks/go-tiled`; `go mod tidy` removed the dependency in
   `9801368` once the package was gone.
 - `internal/config/config.go` — legacy fields had no consumer outside this

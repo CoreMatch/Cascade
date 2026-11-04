@@ -20,24 +20,25 @@ The proxy, however, was built against contract v1, when mutual TLS plus
 Ed25519 signature verification was mandatory, and had not been relaxed since
 (see 0004). The reference backend (RW-HPS Go Server) defaults its trust
 strategy to `open` and serves plaintext unless server certificates are
-configured (`internal/net/gateway/trust.go`, DECISIONS D-24), so the two
-sides were mismatched by default: the proxy insisted on mTLS toward a
-backend that checks nothing. Author approval to fix this was granted
-2026-11-05; contract v1.2 was issued first (contract-first), then this
-implementation followed.
+configured
+(`/home/lnb/RW-HPS/Go-Server/internal/net/gateway/trust.go::ParseTrustMode`,
+DECISIONS D-24), so the two sides were mismatched by default: the proxy
+insisted on mTLS toward a backend that checks nothing. Author approval to
+fix this was granted 2026-11-05; contract v1.2 was issued first
+(contract-first), then this implementation followed.
 
 ## Decision
 
 **Per-backend declaration drives the transport.** Each configured backend
-carries two fields (`internal/config/config.go:18-30`):
+carries two fields (`internal/config/config.go::BackendConfig`):
 
 - `trust_mode` — the trust strategy the operator declares for that backend
   (`open`, `ip`, or `pinned`), mirroring the backend's own configuration.
 - `tls_mode` — the transport selection: `auto` (default; empty is
   equivalent), `mtls`, or `plain`.
 
-`ResolveTransport` (`internal/backend/transport_mode.go:56`) derives the
-transport:
+`ResolveTransport` (`internal/backend/transport_mode.go::ResolveTransport`)
+derives the transport:
 
 | `tls_mode` | `trust_mode` | Transport |
 | --- | --- | --- |
@@ -54,23 +55,26 @@ transport** — TLS with a client certificate — per contract v1.2 ("Proxy
 transport selection"): the proxy fails closed and never falls back to
 plaintext silently.
 
-**Transport constrains the control URL scheme** (`client.go:95-143`): mTLS
-requires `https`, plaintext requires `http`; mismatches are startup errors
-whose messages name the declared fields. Plaintext backends need no
-certificate material at all; mTLS backends still require the client
-certificate, key, and CA pool (`client.go:145-174`), and the game dial uses
-`tls.Dialer` or the plain `net.Dialer` accordingly (`client.go:177-189`).
-The resolved transport is reported per backend in `/api/backends`
-(`client.go:67`).
+**Transport constrains the control URL scheme**
+(`internal/backend/client.go::NewClient`): mTLS requires `https`, plaintext
+requires `http`; mismatches are startup errors whose messages name the
+declared fields. Plaintext backends need no certificate material at all;
+mTLS backends still require the client certificate, key, and CA pool
+(`internal/backend/client.go::makeTLSConfig`), and the game dial uses
+`tls.Dialer` or the plain `net.Dialer` accordingly
+(`internal/backend/client.go::DialGame`). The resolved transport is
+reported per backend in `/api/backends`
+(`internal/backend/client.go::Status`).
 
 **Identity semantics are unchanged.** The 24-byte `CASC` preamble is still
 written first on every game connection regardless of transport
-(`internal/proxy/server.go:164-178`); the proxy still signs Ed25519 JWTs on
-every bind (`internal/proxy/token.go`); only `Preregister` passes before a
-session is bound (`internal/proxy/session.go:108-110`); bind failures are
-still recorded by `logBindFailure` at error level without the JWT
-(`session.go:155-168`). The one-time `jti` ledger is the backend's and is
-independent of transport.
+(`internal/proxy/server.go::handleConnection`); the proxy still signs
+Ed25519 JWTs on every bind (`internal/proxy/token.go`); only `Preregister`
+passes before a session is bound
+(`internal/proxy/session.go::backendToClient`); bind failures are still
+recorded by `logBindFailure` at error level without the JWT
+(`internal/proxy/session.go::logBindFailure`). The one-time `jti` ledger is
+the backend's and is independent of transport.
 
 **Contract**: HA-Contract v1.2 (merge `6892fc4`, content `c7f8aff`) defines
 the selection rule, the fail-closed default, the override, and the
@@ -109,14 +113,16 @@ Benefits:
 
 ## Evidence
 
-- `internal/backend/transport_mode.go:22-97` (TransportMode, derivation
-  table, fail-closed default, plain/pinned conflict),
-  `internal/backend/client.go:95-143` (NewClient: resolution, scheme
-  validation, material only for mTLS), `:177-189` (DialGame plain vs TLS),
-  `internal/config/config.go:18-30` (`trust_mode`/`tls_mode` fields),
-  `internal/backend/client.go:67` + `directory.go:288-295` (resolved
-  transport in `/api/backends`). Commits `cfa374b` (implementation),
-  `193de11` (config.example.yaml, README).
+- `internal/backend/transport_mode.go::TransportMode`,
+  `internal/backend/transport_mode.go::ResolveTransport` (derivation table,
+  fail-closed default, plain/pinned conflict),
+  `internal/backend/client.go::NewClient` (resolution, scheme validation,
+  material only for mTLS), `internal/backend/client.go::DialGame` (plain vs
+  TLS), `internal/config/config.go::BackendConfig` (`trust_mode`/`tls_mode`
+  fields), `internal/backend/client.go::Status` +
+  `internal/backend/directory.go::Statuses` (resolved transport in
+  `/api/backends`). Commits `cfa374b` (implementation), `193de11`
+  (config.example.yaml, README).
 - HA-Contract repository: `docs/dev/Cascade/Cascade-Backend-v1.md` v1.2
   ("Proxy transport selection", Changelog v1.1.1 → v1.2), merge `6892fc4`;
   `docs/api/openapi/cascade-backend-v1.yaml` `info.version: 1.2.0`.
@@ -140,10 +146,13 @@ Benefits:
   here in committable form: see
   [appendix-plain-transport-e2e.md](appendix-plain-transport-e2e.md) for the
   full source, layout, and reproduction steps.
-- RW-HPS Go Server: `internal/net/gateway/trust.go` (trust tiers; `""` ≡
-  `open`), `internal/net/gateway/gateway.go:125-153` (server TLS only when
-  certificates are configured), `internal/app/cascade.go:26-88` (gateway
-  assembly), README "Cascade 边缘代理模式" (D-24).
+- RW-HPS Go Server:
+  `/home/lnb/RW-HPS/Go-Server/internal/net/gateway/trust.go::ParseTrustMode`
+  (trust tiers; `""` ≡ `open`),
+  `/home/lnb/RW-HPS/Go-Server/internal/net/gateway/gateway.go::loadServerTLS`
+  (server TLS only when certificates are configured),
+  `/home/lnb/RW-HPS/Go-Server/internal/app/cascade.go::loadCascadeGateway`
+  (gateway assembly), README "Cascade 边缘代理模式" (D-24).
 - Cross-references: 0004 (the preamble and passthrough are unchanged; its
   "always mutual TLS" transport statement is superseded here), 0003
   (identity chain, transport-independent).

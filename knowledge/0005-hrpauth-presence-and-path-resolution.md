@@ -25,45 +25,51 @@ directory.
   (delayed 2 s, non-blocking): `POST /services/presence` with
   `{name, ttl_seconds, security_level: 0}`, then relay rules, an internal
   key refresh, and the embedded SDK package upload
-  (`internal/app/app.go:115-124,153-182`;
-  `internal/auth/client.go:303-310,314-335`).
+  (`internal/app/app.go::Run`, `internal/app/app.go::registerService`;
+  `internal/auth/client.go::RegisterPresence`,
+  `internal/auth/client.go::RegisterRelay`).
 - A renewal loop re-posts the same presence record at **half the TTL**
-  (`internal/app/presence.go:25-30,46-67`), so a renewal lands well before
+  (`internal/app/presence.go::presenceInterval`,
+  `internal/app/presence.go::presenceLoop`), so a renewal lands well before
   the record expires and one missed renewal is tolerable. Failed renewals
   retry with exponential backoff, 5 s start capped at 60 s, logged at error
-  level (`presence.go:12-14,33-39`).
+  level (`internal/app/presence.go::presenceBackoffStart`,
+  `internal/app/presence.go::presenceBackoffMax`,
+  `internal/app/presence.go::nextPresenceBackoff`).
 - `ttl_seconds <= 0` declares a never-expiring record per the HRPAuth
-  contract and disables the loop (`presence.go:25-28`; HA-Contract
-  `hrpauth-business.yaml`, `PresenceRequest.ttl_seconds`). The default TTL
-  is 120 s (`internal/config/config.go:167`), configurable via
+  contract and disables the loop (`internal/app/presence.go::presenceInterval`;
+  HA-Contract `hrpauth-business.yaml`, `PresenceRequest.ttl_seconds`). The
+  default TTL is 120 s
+  (`internal/config/config.go (field: presence_ttl_sec)`), configurable via
   `presence_ttl_sec` / `RWGIN_PRESENCE_TTL_SEC`.
 - **There is no deregistration.** The HRPAuth contract exposes only
   `POST /services/presence` (register or heartbeat); no deregister endpoint
   exists (HA-Contract `hrpauth-business.yaml`, `/services/presence`).
   Consequently nothing is sent on shutdown; the record simply expires after
-  its TTL (`presence.go:41-45`).
+  its TTL (`internal/app/presence.go::presenceLoop`).
 
 **Runtime path resolution.**
 
 - Relative program-owned paths are resolved against the working directory
   first (preserves `go run` behavior) and the executable's directory second
-  (`internal/paths/paths.go:24-33`), via `paths.FirstExisting`
-  (`paths.go:38-45`). This applies to:
+  (`internal/paths/paths.go::Candidates`), via
+  `internal/paths/paths.go::FirstExisting`. This applies to:
   - `config.yaml` — an existing file is read from either location; a
     brand-new file is always created in the working directory
-    (`internal/config/config.go:117-155`).
+    (`internal/config/config.go::loadOrCreateFile`).
   - the SQLite `db_path` — an existing database found next to the
     executable wins over creating a fresh one in the cwd
-    (`internal/app/app.go:44-58`).
+    (`internal/app/app.go::New`).
   - the migrations directory
-    (`internal/database/migrate.go:51-58`).
+    (`internal/database/migrate.go::RunMigrations`).
 - A missing migrations directory is **fatal**: startup aborts with
   `ErrMigrationsDirNotFound` listing every candidate path tried
-  (`migrate.go:20-23,55-58`). Silently skipping migrations would leave the
-  database without tables (historically surfacing later as "no such table:
-  player_bindings" during identity binding — commit `3b46aac`). Standalone
-  deployments must therefore ship `internal/database/migrations`
-  (`README.md:40`).
+  (`internal/database/migrate.go::ErrMigrationsDirNotFound`,
+  `internal/database/migrate.go::RunMigrations`). Silently skipping
+  migrations would leave the database without tables (historically
+  surfacing later as "no such table: player_bindings" during identity
+  binding — commit `3b46aac`). Standalone deployments must therefore ship
+  `internal/database/migrations` (`README.md:L38`).
 
 ## Consequences
 
@@ -93,47 +99,62 @@ Why the default TTL is exactly 120 s: the author no longer recalls the
 original rationale (2026-11-04), and a contract check settles the question.
 The HRPAuth contract prescribes **no default** for `ttl_seconds`: the field
 is optional, and `<= 0` or omission means "never expires" (HA-Contract
-`hrpauth-business.yaml:1173-1175`; `microservices.md:64`). **120 s therefore
-comes from this repository's own historical implementation — the value
-already used by the original one-shot registration (`9dceaf6`); it is not a
-contract-mandated default and not an ecosystem convention.** The only
-numerical data point in the contract repository is the registration example
-in `microservices.md:46`, which happens to use `"ttl_seconds": 120` — an
-illustrative example, not a prescribed value.
+`/home/lnb/Desktop/HA/HA-Contract/docs/api/openapi/hrpauth-business.yaml (field: ttl_seconds)`;
+`/home/lnb/Desktop/HA/HA-Contract/docs/dev/HRPAuth/microservices.md:L64`).
+**120 s therefore comes from this repository's own historical implementation
+— the value already used by the original one-shot registration
+(`9dceaf6`); it is not a contract-mandated default and not an ecosystem
+convention.** The only numerical data point in the contract repository is
+the registration example in
+`/home/lnb/Desktop/HA/HA-Contract/docs/dev/HRPAuth/microservices.md:L46`,
+which happens to use `"ttl_seconds": 120` — an illustrative example, not a
+prescribed value.
 
 ## Evidence
 
-- `internal/app/app.go:115-124` (startup registration goroutine + renewal
-  loop), `:153-182` (`registerService`: presence, relay, internal key, SDK
-  upload), `:44-58` (sqlite `db_path` resolution).
-- `internal/app/presence.go:12-14` (backoff bounds), `:25-30` (half-TTL
-  interval; `<=0` disables), `:33-39` (backoff doubling), `:41-67` (loop;
-  comment documenting the missing deregister endpoint).
-- `internal/auth/client.go:303-310` (`RegisterPresence` body incl.
-  `ttl_seconds`, `security_level: 0`), `:314-335` (`RegisterRelay`).
-- `internal/paths/paths.go:24-33` (`Candidates`: cwd then executable dir),
-  `:38-45` (`FirstExisting`).
-- `internal/config/config.go:117-155` (config lookup/creation), `:167`
-  (`PresenceTTLSec` default 120).
-- `internal/database/migrate.go:20-23` (`ErrMigrationsDirNotFound`),
-  `:51-58` (resolution + fatal on missing), `:87-97` (per-db-type
+- `internal/app/app.go::Run` (startup registration goroutine + renewal
+  loop), `internal/app/app.go::registerService` (presence, relay, internal
+  key, SDK upload), `internal/app/app.go::New` (sqlite `db_path`
+  resolution).
+- `internal/app/presence.go::presenceBackoffStart`,
+  `internal/app/presence.go::presenceBackoffMax` (backoff bounds),
+  `internal/app/presence.go::presenceInterval` (half-TTL interval; `<=0`
+  disables), `internal/app/presence.go::nextPresenceBackoff` (backoff
+  doubling), `internal/app/presence.go::presenceLoop` (loop; comment
+  documenting the missing deregister endpoint).
+- `internal/auth/client.go::RegisterPresence` (body incl. `ttl_seconds`,
+  `security_level: 0`), `internal/auth/client.go::RegisterRelay`.
+- `internal/paths/paths.go::Candidates` (cwd then executable dir),
+  `internal/paths/paths.go::FirstExisting`.
+- `internal/config/config.go::loadOrCreateFile` (config lookup/creation),
+  `internal/config/config.go (field: presence_ttl_sec)` (`PresenceTTLSec`
+  default 120).
+- `internal/database/migrate.go::ErrMigrationsDirNotFound`,
+  `internal/database/migrate.go::RunMigrations` (resolution + fatal on
+  missing), `internal/database/migrate.go::RunMigrationsForDB` (per-db-type
   migrations dirs under `internal/database/migrations/`).
-- HA-Contract repository, `docs/api/openapi/hrpauth-business.yaml`:
-  `/services/presence` at `:703-714` (POST only — register or heartbeat;
-  re-verified 2026-11-04 against the spec's complete path list: no
-  deregister or DELETE operation for presence exists anywhere) and
-  `PresenceRequest.ttl_seconds` at `:1173-1175` ("Self-declared lifetime in
-  seconds; <=0 or omitted means never expires"). No default value for
-  `ttl_seconds` is prescribed anywhere in the spec.
-- HA-Contract repository, `docs/dev/HRPAuth/microservices.md:43-59`
-  (registration example using `"ttl_seconds": 120`), `:64` (`ttl_seconds`
-  semantics: optional; `<= 0` or omitted = never expires), `:88` (repeated
-  heartbeats keep `first_seen`, refresh `last_seen`; expired records are
-  cleaned lazily on access).
+- HA-Contract repository,
+  `/home/lnb/Desktop/HA/HA-Contract/docs/api/openapi/hrpauth-business.yaml`:
+  `/services/presence`
+  (`/home/lnb/Desktop/HA/HA-Contract/docs/api/openapi/hrpauth-business.yaml (field: /services/presence)`;
+  POST only — register or heartbeat; re-verified 2026-11-04 against the
+  spec's complete path list: no deregister or DELETE operation for presence
+  exists anywhere) and `PresenceRequest.ttl_seconds`
+  (`/home/lnb/Desktop/HA/HA-Contract/docs/api/openapi/hrpauth-business.yaml (field: ttl_seconds)`:
+  "Self-declared lifetime in seconds; <=0 or omitted means never expires").
+  No default value for `ttl_seconds` is prescribed anywhere in the spec.
+- HA-Contract repository,
+  `/home/lnb/Desktop/HA/HA-Contract/docs/dev/HRPAuth/microservices.md:L43-L59`
+  (registration example using `"ttl_seconds": 120`),
+  `/home/lnb/Desktop/HA/HA-Contract/docs/dev/HRPAuth/microservices.md:L64`
+  (`ttl_seconds` semantics: optional; `<= 0` or omitted = never expires),
+  `/home/lnb/Desktop/HA/HA-Contract/docs/dev/HRPAuth/microservices.md:L88`
+  (repeated heartbeats keep `first_seen`, refresh `last_seen`; expired
+  records are cleaned lazily on access).
 - Commits: `9dceaf6` "fix(auth): renew HRPAuth presence before its TTL
   expires" (documents the original one-shot bug, the half-TTL cadence,
   backoff, and the contract check for the TTL unit); `3b46aac` "fix(db):
   resolve runtime paths next to the executable and fail loudly when
   migrations are missing" (documents the silent table-less startup bug).
-- `README.md:40` — operator-facing path-resolution and migrations-shipping
+- `README.md:L38` — operator-facing path-resolution and migrations-shipping
   statement.
