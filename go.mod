@@ -6,7 +6,6 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-migrate/migrate/v4 v4.20.1
-	github.com/lafriks/go-tiled v0.15.0
 	github.com/redis/go-redis/v9 v9.23.0
 	golang.org/x/text v0.38.0
 	gorm.io/driver/mysql v1.6.0

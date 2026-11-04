@@ -33,17 +33,6 @@ type BackendConfig struct {
 type Config struct {
 	GameListenAddr           string
 	HTTPListenAddr           string
-	ServerID                 string
-	RelayHandshakeID         string
-	RoomCodePrefix           string
-	DefaultMapName           string
-	DefaultRoomName          string
-	DefaultMaxPlayers        int
-	DefaultClientVersion     int
-	DefaultIncome            float32
-	DefaultMaxUnits          int
-	MapsDir                  string
-	ModsDir                  string
 	DBType                   string // "sqlite" or "mysql"
 	DBPath                   string // SQLite path (used when DBType=sqlite)
 	MySQLDSN                 string // MySQL DSN (used when DBType=mysql), e.g. "user:pass@tcp(host:3306)/dbname?parseTime=true"
@@ -57,7 +46,6 @@ type Config struct {
 	HRPAuthServiceName       string // Service name for Core /services/auth-key registration
 	HRPAuthRelayPrefix       string // Relay path prefix for Core gateway (e.g. /rusted-warfare)
 	PresenceTTLSec           int    // Presence record TTL in seconds; renewed at half this interval, <=0 disables renewal (record never expires)
-	HeartbeatIntervalSec     int
 	RegisterTimeoutSec       int
 	ReadTimeoutSec           int
 	MaxConnections           int
@@ -76,21 +64,13 @@ type Config struct {
 }
 
 // fileConfig mirrors the YAML structure, with a Version field for migration.
+// Keys removed over time (legacy game-server fields such as server_id,
+// relay_handshake_id, room_code_prefix, default_*, maps_dir, mods_dir,
+// heartbeat_interval_sec) are ignored on load; see knowledge entry 0001.
 type fileConfig struct {
 	Version                  int             `yaml:"version"`
 	GameListenAddr           string          `yaml:"game_listen_addr"`
 	HTTPListenAddr           string          `yaml:"http_listen_addr"`
-	ServerID                 string          `yaml:"server_id"`
-	RelayHandshakeID         string          `yaml:"relay_handshake_id"`
-	RoomCodePrefix           string          `yaml:"room_code_prefix"`
-	DefaultMapName           string          `yaml:"default_map_name"`
-	DefaultRoomName          string          `yaml:"default_room_name"`
-	DefaultMaxPlayers        int             `yaml:"default_max_players"`
-	DefaultClientVersion     int             `yaml:"default_client_version"`
-	DefaultIncome            float32         `yaml:"default_income"`
-	DefaultMaxUnits          int             `yaml:"default_max_units"`
-	MapsDir                  string          `yaml:"maps_dir"`
-	ModsDir                  string          `yaml:"mods_dir"`
 	DBType                   string          `yaml:"db_type"`
 	DBPath                   string          `yaml:"db_path"`
 	MySQLDSN                 string          `yaml:"mysql_dsn"`
@@ -104,7 +84,6 @@ type fileConfig struct {
 	HRPAuthServiceName       string          `yaml:"hrpauth_service_name"`
 	HRPAuthRelayPrefix       string          `yaml:"hrpauth_relay_prefix"`
 	PresenceTTLSec           int             `yaml:"presence_ttl_sec"`
-	HeartbeatIntervalSec     int             `yaml:"heartbeat_interval_sec"`
 	RegisterTimeoutSec       int             `yaml:"register_timeout_sec"`
 	ReadTimeoutSec           int             `yaml:"read_timeout_sec"`
 	MaxConnections           int             `yaml:"max_connections"`
@@ -181,23 +160,11 @@ func defaultFileConfig() fileConfig {
 		Version:                  configVersion,
 		GameListenAddr:           ":5123",
 		HTTPListenAddr:           ":8080",
-		ServerID:                 "cascade",
-		RelayHandshakeID:         "net.rwhps.server",
-		RoomCodePrefix:           "GW",
-		DefaultMapName:           "unit_types_test.tmx",
-		DefaultRoomName:          "Cascade Room",
-		DefaultMaxPlayers:        8,
-		DefaultClientVersion:     151,
-		DefaultIncome:            1.0,
-		DefaultMaxUnits:          200,
-		MapsDir:                  "assets/maps",
-		ModsDir:                  "assets/mods",
 		DBType:                   "sqlite",
 		DBPath:                   "data/cascade.db",
 		HRPAuthServiceName:       "Cascade",
 		HRPAuthRelayPrefix:       "/rusted-warfare",
 		PresenceTTLSec:           120,
-		HeartbeatIntervalSec:     2,
 		RegisterTimeoutSec:       5,
 		ReadTimeoutSec:           90,
 		MaxConnections:           0,
@@ -235,9 +202,6 @@ func migrateConfig(oldVersion int, data []byte) []byte {
 			return data
 		}
 		m["version"] = 2
-		if _, ok := m["heartbeat_interval_sec"]; !ok {
-			m["heartbeat_interval_sec"] = 2
-		}
 		if _, ok := m["register_timeout_sec"]; !ok {
 			m["register_timeout_sec"] = 5
 		}
@@ -293,17 +257,6 @@ func fileConfigToConfig(fc fileConfig) Config {
 	cfg := Config{
 		GameListenAddr:           fc.GameListenAddr,
 		HTTPListenAddr:           fc.HTTPListenAddr,
-		ServerID:                 fc.ServerID,
-		RelayHandshakeID:         fc.RelayHandshakeID,
-		RoomCodePrefix:           fc.RoomCodePrefix,
-		DefaultMapName:           fc.DefaultMapName,
-		DefaultRoomName:          fc.DefaultRoomName,
-		DefaultMaxPlayers:        fc.DefaultMaxPlayers,
-		DefaultClientVersion:     fc.DefaultClientVersion,
-		DefaultIncome:            fc.DefaultIncome,
-		DefaultMaxUnits:          fc.DefaultMaxUnits,
-		MapsDir:                  fc.MapsDir,
-		ModsDir:                  fc.ModsDir,
 		DBType:                   fc.DBType,
 		DBPath:                   fc.DBPath,
 		MySQLDSN:                 fc.MySQLDSN,
@@ -317,7 +270,6 @@ func fileConfigToConfig(fc fileConfig) Config {
 		HRPAuthServiceName:       fc.HRPAuthServiceName,
 		HRPAuthRelayPrefix:       fc.HRPAuthRelayPrefix,
 		PresenceTTLSec:           fc.PresenceTTLSec,
-		HeartbeatIntervalSec:     fc.HeartbeatIntervalSec,
 		RegisterTimeoutSec:       fc.RegisterTimeoutSec,
 		ReadTimeoutSec:           fc.ReadTimeoutSec,
 		MaxConnections:           fc.MaxConnections,
@@ -341,49 +293,13 @@ func fileConfigToConfig(fc fileConfig) Config {
 	if cfg.HTTPListenAddr == "" {
 		cfg.HTTPListenAddr = d.HTTPListenAddr
 	}
-	if cfg.ServerID == "" {
-		cfg.ServerID = d.ServerID
-	}
-	if cfg.RelayHandshakeID == "" {
-		cfg.RelayHandshakeID = d.RelayHandshakeID
-	}
-	if cfg.RoomCodePrefix == "" {
-		cfg.RoomCodePrefix = d.RoomCodePrefix
-	}
-	if cfg.DefaultMapName == "" {
-		cfg.DefaultMapName = d.DefaultMapName
-	}
-	if cfg.DefaultRoomName == "" {
-		cfg.DefaultRoomName = d.DefaultRoomName
-	}
-	if cfg.MapsDir == "" {
-		cfg.MapsDir = d.MapsDir
-	}
-	if cfg.ModsDir == "" {
-		cfg.ModsDir = d.ModsDir
-	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = d.DBPath
 	}
 	if cfg.DBType == "" {
 		cfg.DBType = d.DBType
 	}
-	// Apply defaults for zero-valued int/float fields
-	if cfg.DefaultMaxPlayers == 0 {
-		cfg.DefaultMaxPlayers = d.DefaultMaxPlayers
-	}
-	if cfg.DefaultClientVersion == 0 {
-		cfg.DefaultClientVersion = d.DefaultClientVersion
-	}
-	if cfg.DefaultIncome == 0 {
-		cfg.DefaultIncome = d.DefaultIncome
-	}
-	if cfg.DefaultMaxUnits == 0 {
-		cfg.DefaultMaxUnits = d.DefaultMaxUnits
-	}
-	if cfg.HeartbeatIntervalSec == 0 {
-		cfg.HeartbeatIntervalSec = d.HeartbeatIntervalSec
-	}
+	// Apply defaults for zero-valued int fields
 	if cfg.RegisterTimeoutSec == 0 {
 		cfg.RegisterTimeoutSec = d.RegisterTimeoutSec
 	}
@@ -420,39 +336,6 @@ func applyEnvOverrides(cfg *Config) {
 	if v, ok := lookupEnv("RWGIN_HTTP_ADDR"); ok {
 		cfg.HTTPListenAddr = v
 	}
-	if v, ok := lookupEnv("RWGIN_SERVER_ID"); ok {
-		cfg.ServerID = v
-	}
-	if v, ok := lookupEnv("RWGIN_RELAY_ID"); ok {
-		cfg.RelayHandshakeID = v
-	}
-	if v, ok := lookupEnv("RWGIN_ROOM_PREFIX"); ok {
-		cfg.RoomCodePrefix = v
-	}
-	if v, ok := lookupEnv("RWGIN_DEFAULT_MAP"); ok {
-		cfg.DefaultMapName = v
-	}
-	if v, ok := lookupEnv("RWGIN_DEFAULT_ROOM"); ok {
-		cfg.DefaultRoomName = v
-	}
-	if v, ok := lookupEnvInt("RWGIN_MAX_PLAYERS"); ok {
-		cfg.DefaultMaxPlayers = v
-	}
-	if v, ok := lookupEnvInt("RWGIN_CLIENT_VERSION"); ok {
-		cfg.DefaultClientVersion = v
-	}
-	if v, ok := lookupEnvFloat32("RWGIN_INCOME"); ok {
-		cfg.DefaultIncome = v
-	}
-	if v, ok := lookupEnvInt("RWGIN_MAX_UNITS"); ok {
-		cfg.DefaultMaxUnits = v
-	}
-	if v, ok := lookupEnv("RWGIN_MAPS_DIR"); ok {
-		cfg.MapsDir = v
-	}
-	if v, ok := lookupEnv("RWGIN_MODS_DIR"); ok {
-		cfg.ModsDir = v
-	}
 	if v, ok := lookupEnv("RWGIN_DB_TYPE"); ok {
 		cfg.DBType = v
 	}
@@ -479,9 +362,6 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnvInt("RWGIN_PRESENCE_TTL_SEC"); ok {
 		cfg.PresenceTTLSec = v
-	}
-	if v, ok := lookupEnvInt("RWGIN_HEARTBEAT_SEC"); ok {
-		cfg.HeartbeatIntervalSec = v
 	}
 	if v, ok := lookupEnvInt("RWGIN_REGISTER_TIMEOUT_SEC"); ok {
 		cfg.RegisterTimeoutSec = v
@@ -529,15 +409,6 @@ func lookupEnvInt(key string) (int, bool) {
 	if value, ok := os.LookupEnv(key); ok && value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil {
 			return parsed, true
-		}
-	}
-	return 0, false
-}
-
-func lookupEnvFloat32(key string) (float32, bool) {
-	if value, ok := os.LookupEnv(key); ok && value != "" {
-		if parsed, err := strconv.ParseFloat(value, 32); err == nil {
-			return float32(parsed), true
 		}
 	}
 	return 0, false

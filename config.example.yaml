@@ -8,23 +8,6 @@ version: 2
 game_listen_addr: ":5123"        # 游戏 TCP 监听地址（RW 客户端连入）
 http_listen_addr: ":8080"        # 管理/门面 HTTP 监听地址
 
-# --- 身份与路由 ---
-server_id: "cascade"
-relay_handshake_id: "net.rwhps.server"
-room_code_prefix: "GW"
-
-# --- 房间默认值 ---
-default_map_name: "unit_types_test.tmx"
-default_room_name: "Cascade Room"
-default_max_players: 8
-default_client_version: 151
-default_income: 1.0
-default_max_units: 200
-
-# --- 资源目录 ---
-maps_dir: "assets/maps"
-mods_dir: "assets/mods"
-
 # --- 存储 ---
 db_type: "sqlite"                # sqlite 或 mysql
 db_path: "data/cascade.db"       # db_type=sqlite 时生效
@@ -45,7 +28,6 @@ hrpauth_relay_prefix: "/rusted-warfare"
 presence_ttl_sec: 120
 
 # --- 代理行为 ---
-heartbeat_interval_sec: 2
 register_timeout_sec: 5
 read_timeout_sec: 90
 max_connections: 0               # 0 = 不限制
