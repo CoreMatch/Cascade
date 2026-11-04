@@ -35,11 +35,11 @@ The chain, per connection:
    other access (`token.go:32-60`).
 4. **Bind before forwarding.** The proxy calls
    `PUT /v1/sessions/{sessionID}/identity` with `{"token": ...}`
-   (`internal/backend/client.go:185-188`) and only after that succeeds does
+   (`internal/backend/client.go:218-221`) and only after that succeeds does
    it forward the client's `RegisterPlayer` to the backend
    (`session.go:77-95`). The bind call is bounded by
    `pending_session_timeout_sec` (default 5 s)
-   (`session.go:144-148`, `internal/config/config.go:205`).
+   (`session.go:144-148`, `internal/config/config.go:210`).
 5. **Hard gates both directions.** Client game data before a successful
    bind closes the session (`session.go:87-89`); backend game data before
    the bind is rejected except the `Preregister` answer
@@ -102,7 +102,7 @@ Benefits:
   `:152-168` (redacted failure logging).
 - `internal/proxy/token.go:32-60` (key loading: Ed25519 PKCS#8, permission
   check), `:62-82` (claims incl. `exp` = +30 s, random `jti`).
-- `internal/backend/client.go:185-188` — `BindIdentity` issues
+- `internal/backend/client.go:218-221` — `BindIdentity` issues
   `PUT /v1/sessions/{sessionID}/identity`.
 - `internal/protocol/types.go:23` — `TypeRegisterPlayer = 110`.
 - `internal/protocol/codec.go:350-368` — `DecodeRegister`.
