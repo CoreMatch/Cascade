@@ -70,3 +70,113 @@ func TestMigratedSchemaSurvivesAutoMigrate(t *testing.T) {
 		t.Fatalf("duplicate insert failed for an unexpected reason: %v", dup.Error)
 	}
 }
+
+// migratedTestStore returns a GORMStore backed by a freshly migrated
+// temporary sqlite database.
+func migratedTestStore(t *testing.T) *GORMStore {
+	t.Helper()
+	dsn := filepath.Join(t.TempDir(), "cascade.db")
+	logger := log.New(io.Discard, "", 0)
+	if err := RunMigrations("sqlite3", dsn, "migrations/sqlite", logger); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	return &GORMStore{db: db, logger: logger}
+}
+
+func TestCreateProxyBindingUpsertsWithoutClobberingClaims(t *testing.T) {
+	store := migratedTestStore(t)
+
+	if err := store.CreateProxyBinding("game-uuid-a", "first-name"); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+	if err := store.ClaimBinding("game-uuid-a", "ha-user-1"); err != nil {
+		t.Fatalf("claim binding: %v", err)
+	}
+
+	// A re-login (CreateProxyBinding again) refreshes name/last_login but
+	// must not reset the claim state.
+	if err := store.CreateProxyBinding("game-uuid-a", "renamed"); err != nil {
+		t.Fatalf("re-create binding: %v", err)
+	}
+	binding, err := store.GetBindingByGameUUID("game-uuid-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding == nil {
+		t.Fatal("binding disappeared after upsert")
+	}
+	if binding.PlayerName != "renamed" {
+		t.Fatalf("player name = %q, want refreshed %q", binding.PlayerName, "renamed")
+	}
+	if binding.CBH != 1 || binding.HAUserUUID != "ha-user-1" {
+		t.Fatalf("upsert clobbered the claim: cbh=%d haUserUUID=%q", binding.CBH, binding.HAUserUUID)
+	}
+}
+
+func TestClaimBindingRejectsDoubleClaimAndUnknownPlayers(t *testing.T) {
+	store := migratedTestStore(t)
+
+	if err := store.ClaimBinding("never-seen", "ha-user-1"); err == nil {
+		t.Fatal("claiming an unknown game UUID must fail")
+	}
+
+	if err := store.CreateProxyBinding("game-uuid-b", "guest"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ClaimBinding("game-uuid-b", "ha-user-1"); err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	if err := store.ClaimBinding("game-uuid-b", "ha-user-2"); err == nil {
+		t.Fatal("second claim on the same binding must fail")
+	}
+
+	binding, err := store.GetBindingByGameUUID("game-uuid-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding == nil || binding.HAUserUUID != "ha-user-1" || binding.CBH != 1 {
+		t.Fatalf("binding changed under a rejected claim: %+v", binding)
+	}
+}
+
+func TestGetBindingsByHAUUIDReturnsOwnedBindings(t *testing.T) {
+	store := migratedTestStore(t)
+
+	bindings, err := store.GetBindingsByHAUUID("ha-user-none")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bindings == nil || len(bindings) != 0 {
+		t.Fatalf("unknown HA user = %v, want empty non-nil slice", bindings)
+	}
+
+	for _, gameUUID := range []string{"game-uuid-x", "game-uuid-y"} {
+		if err := store.CreateProxyBinding(gameUUID, "guest-"+gameUUID); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.ClaimBinding(gameUUID, "ha-user-9"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An unclaimed binding must not appear under any HA user.
+	if err := store.CreateProxyBinding("game-uuid-z", "guest-z"); err != nil {
+		t.Fatal(err)
+	}
+
+	bindings, err = store.GetBindingsByHAUUID("ha-user-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 2 {
+		t.Fatalf("bindings for ha-user-9 = %d, want 2 (%+v)", len(bindings), bindings)
+	}
+}

@@ -54,3 +54,41 @@ func TestTokenSignerCreatesBackendBoundEdDSAJWT(t *testing.T) {
 		t.Fatal("JWT must not expose HA identity")
 	}
 }
+
+// TestTokenSignerIssuesUniqueJti guards the proxy side of the one-time jti
+// contract: every signed token must carry a fresh, non-empty token ID, so
+// the backend's one-time jti ledger can never see a collision from the
+// proxy. (The ledger itself — persistence and replay rejection — lives on
+// the backend, e.g. data/CascadeJti.bin in the RW-HPS Go Server.)
+func TestTokenSignerIssuesUniqueJti(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer := &tokenSigner{issuer: "proxy-test", keyID: "key-1", key: privateKey}
+	seen := make(map[string]struct{}, 256)
+	for i := 0; i < 256; i++ {
+		token, err := signer.Sign("backend-a", "11111111-2222-4333-8444-555555555555", "game-user", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		parts := strings.Split(token, ".")
+		claimsBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var claims struct {
+			TokenID string `json:"jti"`
+		}
+		if err := json.Unmarshal(claimsBytes, &claims); err != nil {
+			t.Fatal(err)
+		}
+		if claims.TokenID == "" {
+			t.Fatal("signed token has an empty jti")
+		}
+		if _, dup := seen[claims.TokenID]; dup {
+			t.Fatalf("jti %q was issued twice", claims.TokenID)
+		}
+		seen[claims.TokenID] = struct{}{}
+	}
+}

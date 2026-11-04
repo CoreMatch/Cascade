@@ -43,3 +43,20 @@ func TestCandidatesKeepsAbsolutePaths(t *testing.T) {
 		t.Fatalf("absolute path must not be re-resolved: %v", got)
 	}
 }
+
+// TestCandidatesSurvivesExecutableDirError keeps resolution usable when the
+// executable location cannot be determined (e.g. some sandboxed
+// environments): the relative path itself must still be considered.
+func TestCandidatesSurvivesExecutableDirError(t *testing.T) {
+	orig := ExecutableDir
+	ExecutableDir = func() (string, error) { return "", os.ErrNotExist }
+	t.Cleanup(func() { ExecutableDir = orig })
+
+	got := Candidates("config.yaml")
+	if len(got) != 1 || got[0] != "config.yaml" {
+		t.Fatalf("candidates = %v, want just the relative path", got)
+	}
+	if _, ok := FirstExisting("no-such-file-anywhere"); ok {
+		t.Fatal("FirstExisting reported a missing file as found")
+	}
+}
