@@ -1,10 +1,12 @@
 package database
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -190,6 +192,83 @@ func TestCleanupStaleProxyBindings(t *testing.T) {
 	removed, err = store.CleanupStaleProxyBindings()
 	if err != nil || removed != 0 {
 		t.Fatalf("second cleanup = (%d, %v), want (0, nil)", removed, err)
+	}
+}
+
+// TestConcurrentBindingFlows stresses the binding table with many
+// simultaneous create/claim/read/lang flows plus a single shared UUID
+// hammered by concurrent upserts. Run with -race: it guards the store's
+// concurrent use (the sqlite connection pool is pinned to one writer so
+// the test exercises Go-level races, not sqlite lock policy).
+func TestConcurrentBindingFlows(t *testing.T) {
+	store := migratedTestStore(t)
+	if sqlDB, err := store.db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
+	}
+
+	const workers = 16
+	const perWorker = 15
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*perWorker*4+workers*10)
+
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < perWorker; i++ {
+				gameUUID := fmt.Sprintf("game-%d-%d", w, i)
+				haUUID := fmt.Sprintf("ha-%d-%d", w, i)
+				if err := store.CreateProxyBinding(gameUUID, "player-"+gameUUID); err != nil {
+					errs <- fmt.Errorf("create %s: %w", gameUUID, err)
+					return
+				}
+				if err := store.ClaimBinding(gameUUID, haUUID); err != nil {
+					errs <- fmt.Errorf("claim %s: %w", gameUUID, err)
+					return
+				}
+				binding, err := store.GetBindingByGameUUID(gameUUID)
+				if err != nil || binding == nil || binding.HAUserUUID != haUUID || binding.CBH != 1 {
+					errs <- fmt.Errorf("read back %s: %+v, %v", gameUUID, binding, err)
+					return
+				}
+				if err := store.SetLang(gameUUID, "zh"); err != nil {
+					errs <- fmt.Errorf("set lang %s: %w", gameUUID, err)
+					return
+				}
+			}
+		}(w)
+	}
+
+	// Concurrent upserts of one shared guest binding must converge to a
+	// single row. Individual attempts may lose the create/update race and
+	// surface the unique constraint — that is fail-closed behavior, not a
+	// test failure; only the converged state is asserted below.
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < 10; i++ {
+				_ = store.CreateProxyBinding("shared-uuid", fmt.Sprintf("name-%d-%d", w, i))
+			}
+		}(w)
+	}
+
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+
+	var count int64
+	if err := store.db.Model(&PlayerBinding{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(workers*perWorker + 1); count != want {
+		t.Fatalf("binding rows = %d, want %d (no duplicates, no losses)", count, want)
+	}
+	shared, err := store.GetBindingByGameUUID("shared-uuid")
+	if err != nil || shared == nil || shared.CBH != 0 {
+		t.Fatalf("shared binding = %+v (err %v), want one unclaimed row", shared, err)
 	}
 }
 
