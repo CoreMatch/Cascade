@@ -80,9 +80,11 @@ Costs and limitations:
 
 - The proxy is **over-provisioned under `open` and `ip` backends**:
   deployments must generate and mount client certificates, keys, CAs, and an
-  Ed25519 signing key even when the backend checks none of them. Whether the
-  proxy should ever make mTLS optional per backend is **not decided anywhere
-  in the code or history** — pending author confirmation.
+  Ed25519 signing key even when the backend checks none of them. Author
+  confirmation (2026-11-04): there are no plans to relax this, because it
+  had not been realized that relaxation should be considered; the resulting
+  structural mismatch with the contract's transport/trust separation is
+  recorded in 0006 (proposed, not implemented).
 - The preamble is a hard compatibility boundary: unknown magic, version, or
   header size makes the backend close the connection (contract). The magic
   rename `MCAG` → `CASC` in `69faeb7` therefore invalidates old backends

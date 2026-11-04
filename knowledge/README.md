@@ -28,7 +28,7 @@ conflict to the owner.
 
 Each entry is one page in ADR style:
 
-- **Status** (`accepted` / `superseded` / ...), **Date**
+- **Status** (`accepted` / `proposed` / `superseded` / ...), **Date**
 - **Context** — the problem and constraints
 - **Decision** — what was chosen
 - **Consequences** — including costs and limitations
@@ -36,7 +36,9 @@ Each entry is one page in ADR style:
   evidence was actually checked against this repository (or the HA-Contract
   repository, noted as such); anything that could not be verified is marked
   "not verified". Design intent that cannot be determined from the code or
-  history is listed as "pending author confirmation". Do not fabricate.
+  history is listed as "pending author confirmation"; once the author
+  answers, the entry records the confirmation with its date. Do not
+  fabricate.
 
 ## Entries
 
@@ -47,3 +49,4 @@ Each entry is one page in ADR style:
 | [0003](0003-identity-binding-chain.md) | Identity Binding Chain: Ed25519 JWT Before Game Data | accepted | 2026-11-04 |
 | [0004](0004-mtls-casc-preamble-transport.md) | mTLS + 24-Byte CASC Preamble + Byte Passthrough | accepted | 2026-11-04 |
 | [0005](0005-hrpauth-presence-and-path-resolution.md) | HRPAuth Presence and Runtime Path Resolution | accepted | 2026-11-04 |
+| [0006](0006-plaintext-backends-unreachable.md) | Proxy Transport Is TLS-Only: Plaintext Backends Are Unreachable | proposed | 2026-11-04 |

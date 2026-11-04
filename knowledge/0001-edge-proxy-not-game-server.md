@@ -63,11 +63,12 @@ Benefits:
 - The contract boundary (see 0002–0004) can evolve without touching game
   logic, because there is no game logic here.
 
-Why `internal/game/*` was retained is **not documented anywhere in the code
-or commit history** — pending author confirmation. The only hint is the doc
-comment in `internal/game/mod/mod.go`, which describes a possible "future
-server mode"; whether the package is kept for that reason, or simply not yet
-deleted, cannot be determined from the repository.
+Why `internal/game/*` and the legacy config fields survived the pivot was
+long undocumented in the code and commit history. **Author confirmation
+(2026-11-04): they are leftovers that were simply never cleaned up after the
+pivot, not a deliberate retention.** The doc comment in
+`internal/game/mod/mod.go` about a possible "future server mode" does not
+constitute a rationale for keeping the package.
 
 ## Evidence
 
@@ -90,3 +91,6 @@ deleted, cannot be determined from the repository.
 - `internal/config/config.go:32-41` (Config fields), `:79-88` (YAML tags),
   `:180-189` (defaults) — legacy fields; repository-wide search confirms no
   consumer outside `internal/config/config.go` (verified 2026-11-04).
+- Author confirmation (2026-11-04): `internal/game/*` and the legacy config
+  fields are leftovers never cleaned up after the pivot, not an intentional
+  design choice.
