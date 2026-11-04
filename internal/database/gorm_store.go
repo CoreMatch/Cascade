@@ -111,19 +111,6 @@ func (s *GORMStore) GetBindingByGameUUID(gameUUID string) (*PlayerBinding, error
 	return &binding, nil
 }
 
-// GetBindingByPlayerName looks up a player binding by player name.
-func (s *GORMStore) GetBindingByPlayerName(playerName string) (*PlayerBinding, error) {
-	var binding PlayerBinding
-	err := s.db.Where("player_name = ?", playerName).First(&binding).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &binding, nil
-}
-
 // GetBindingsByHAUUID returns all bindings linked to the given HA user UUID.
 func (s *GORMStore) GetBindingsByHAUUID(haUserUUID string) ([]PlayerBinding, error) {
 	var bindings []PlayerBinding
@@ -172,27 +159,6 @@ func (s *GORMStore) ClaimBinding(gameUUID, haUserUUID string) error {
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("no unclaimed binding found for game_uuid: %s", gameUUID)
 	}
-	return result.Error
-}
-
-// UpdateBindingHAUUID updates the HA user UUID for an existing binding.
-func (s *GORMStore) UpdateBindingHAUUID(gameUUID, haUserUUID string) error {
-	result := s.db.Model(&PlayerBinding{}).
-		Where("game_uuid = ?", gameUUID).
-		Updates(map[string]interface{}{
-			"ha_user_uuid": haUserUUID,
-			"last_login":   time.Now(),
-		})
-
-	return result.Error
-}
-
-// SetQuickAuth updates the quick_auth setting for a player binding.
-func (s *GORMStore) SetQuickAuth(gameUUID string, enabled bool) error {
-	result := s.db.Model(&PlayerBinding{}).
-		Where("game_uuid = ?", gameUUID).
-		Update("quick_auth", enabled)
-
 	return result.Error
 }
 
