@@ -28,12 +28,29 @@ func TestPreambleRoundTrip(t *testing.T) {
 }
 
 func TestPreambleRejectsInvalidHeader(t *testing.T) {
-	header, err := EncodePreamble("01020304-0506-4708-890a-0b0c0d0e0f10")
+	valid, err := EncodePreamble("01020304-0506-4708-890a-0b0c0d0e0f10")
 	if err != nil {
 		t.Fatal(err)
 	}
-	header[5] = 0
-	if _, err := ReadPreamble(bytes.NewReader(header)); err == nil {
-		t.Fatal("expected unsupported version error")
+	for _, test := range []struct {
+		name   string
+		mutate func([]byte)
+	}{
+		{"bad magic", func(h []byte) { copy(h[:4], "XXXX") }},
+		{"unsupported version", func(h []byte) { h[5] = 0 }},
+		{"bad header size", func(h []byte) { h[7] = 0xff }},
+		{"session ID is not UUIDv4", func(h []byte) { h[8+6] &^= 0x40 }},
+		{"truncated header", func(h []byte) { h[0] = 0 }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			header := append([]byte(nil), valid...)
+			test.mutate(header)
+			if test.name == "truncated header" {
+				header = header[:10]
+			}
+			if _, err := ReadPreamble(bytes.NewReader(header)); err == nil {
+				t.Fatalf("expected %s to be rejected", test.name)
+			}
+		})
 	}
 }

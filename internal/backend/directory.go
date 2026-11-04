@@ -290,6 +290,7 @@ func (d *Directory) Statuses() []Status {
 			Successes: state.Successes, LastProbe: state.LastProbe,
 			LastSnapshot: state.LastSnapshot, RoomCount: len(state.Snapshot.Rooms),
 			ControlURL: state.Client.ControlURL, GameAddress: state.Client.GameAddress,
+			Transport:     state.Client.Transport.String(),
 			ConflictRooms: d.conflictsForBackendLocked(id),
 		})
 	}
