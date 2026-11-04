@@ -23,7 +23,7 @@ and trust" / "Backend trust strategies").
 
 **24-byte `CASC` preamble.** After the transport is established, the proxy
 writes exactly 24 bytes before any Rusted Warfare bytes
-(`internal/backend/transport.go:13-50`):
+(`internal/backend/transport.go::EncodePreamble`):
 
 | Offset | Size | Content |
 | --- | ---: | --- |
@@ -33,16 +33,19 @@ writes exactly 24 bytes before any Rusted Warfare bytes
 | 8 | 16 | UUIDv4 session ID |
 
 The session ID is generated with `crypto/rand` and forced to UUIDv4
-(`transport.go:20-29`); encoding validates the UUID version bits
-(`transport.go:31-50`). This layout matches the contract's preamble table
-exactly ("Game TCP preamble" section).
+(`internal/backend/transport.go::NewSessionID`); encoding validates the
+UUID version bits (`internal/backend/transport.go::EncodePreamble`). This
+layout matches the contract's preamble table exactly ("Game TCP preamble"
+section).
 
 **Byte passthrough.** After the preamble, both directions forward raw,
 unmodified frames: the proxy reads packets with their raw bytes preserved
-and writes those raw bytes onward (`internal/proxy/session.go:93` for
-client→backend, `:112` for backend→client). The only packets the proxy
-inspects are those it must act on (identity gate in 0003, chat commands for
-HRPAuth login/claim at `session.go:90-92`).
+and writes those raw bytes onward
+(`internal/proxy/session.go::clientToBackend` for client→backend,
+`internal/proxy/session.go::backendToClient` for backend→client). The only
+packets the proxy inspects are those it must act on (identity gate in 0003,
+chat commands for HRPAuth login/claim at
+`internal/proxy/session.go::handleAuthChat`).
 
 **Proxy-side transport was always mutual TLS.** _(Superseded by 0006,
 2026-11-05: transport is now derived per backend from the declared trust
@@ -92,10 +95,11 @@ Costs and limitations:
 - The preamble is a hard compatibility boundary: unknown magic, version, or
   header size makes the backend close the connection (contract). The magic
   rename `MCAG` → `CASC` in `69faeb7` therefore invalidates old backends
-  (flagged as BREAKING CHANGE in that commit; upgrade note in `README.md:40`).
+  (flagged as BREAKING CHANGE in that commit; upgrade note in
+  `README.md:L40`).
 - Passthrough means the proxy cannot inspect, filter, or rate-limit game
   payloads; connection-level limits (`max_connections`, read timeouts) are
-  the only controls (`internal/proxy/server.go:84-99`).
+  the only controls (`internal/proxy/server.go::acquireConnection`).
 
 Benefits:
 
@@ -107,17 +111,26 @@ Benefits:
 
 ## Evidence
 
-- `internal/backend/transport.go:13-18` (constants: size 24, version 1,
-  magic `CASC`), `:20-29` (UUIDv4 generation), `:31-50` (encoding with
-  UUID version validation), `:67-88` (decoding).
-- `internal/proxy/server.go:164-178` — session ID generation, preamble
-  write, then raw forwarding of the first packet.
-- `internal/proxy/session.go:93,112` — raw passthrough in both directions.
-- `internal/backend/client.go` as of commit `1858901` (line references
-  historical; the always-mTLS transport was replaced in 0006): `:91-94`
-  (https-only control URL), `:118-146` (`makeTLSConfig`: cert/key/CA
-  required, key permission check, TLS >= 1.2), `:148-157` (`DialGame` with
-  the same TLS config). Current transport evidence lives in 0006.
+- `internal/backend/transport.go::PreambleSize`,
+  `internal/backend/transport.go::PreambleVersion`,
+  `internal/backend/transport.go::preambleMagic` (constants: size 24,
+  version 1, magic `CASC`),
+  `internal/backend/transport.go::NewSessionID` (UUIDv4 generation),
+  `internal/backend/transport.go::EncodePreamble` (encoding with UUID
+  version validation), `internal/backend/transport.go::ReadPreamble`
+  (decoding).
+- `internal/proxy/server.go::handleConnection` — session ID generation,
+  preamble write, then raw forwarding of the first packet.
+- `internal/proxy/session.go::clientToBackend`,
+  `internal/proxy/session.go::backendToClient` — raw passthrough in both
+  directions.
+- `internal/backend/client.go` as of commit `1858901` (time-point anchors;
+  the always-mTLS transport was replaced in 0006):
+  `internal/backend/client.go:L91-L94 @ 1858901` (https-only control URL),
+  `internal/backend/client.go:L118-L146 @ 1858901` (`makeTLSConfig`:
+  cert/key/CA required, key permission check, TLS >= 1.2),
+  `internal/backend/client.go:L148-L157 @ 1858901` (`DialGame` with the
+  same TLS config). Current transport evidence lives in 0006.
 - HA-Contract repository, `docs/dev/Cascade/Cascade-Backend-v1.md`:
   "Transport and trust", "Backend trust strategies" (open/ip/pinned,
   `FORBIDDEN`), "Game TCP preamble" (layout table, rejection behavior),
