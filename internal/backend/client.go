@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -63,6 +64,7 @@ type Status struct {
 	RoomCount     int       `json:"roomCount"`
 	ControlURL    string    `json:"controlUrl"`
 	GameAddress   string    `json:"gameAddress"`
+	Transport     string    `json:"transport"`
 	ConflictRooms []string  `json:"conflictRooms,omitempty"`
 }
 
@@ -83,21 +85,42 @@ type Client struct {
 	ID          string
 	ControlURL  string
 	GameAddress string
-	http        *http.Client
-	tlsConfig   *tls.Config
+	// Transport is the resolved transport toward this backend (contract v1.2,
+	// "Proxy transport selection"): mtls or plain.
+	Transport TransportMode
+	http      *http.Client
+	tlsConfig *tls.Config
 }
 
 func NewClient(cfg config.BackendConfig, certPath, keyPath, caPath string) (*Client, error) {
-	controlURL, err := url.Parse(cfg.ControlURL)
-	if err != nil || controlURL.Scheme != "https" || controlURL.Host == "" {
-		return nil, errors.New("backend control_url must be an absolute https URL")
-	}
-	tlsConfig, err := makeTLSConfig(certPath, keyPath, caPath)
+	transportMode, err := ResolveTransport(cfg)
 	if err != nil {
 		return nil, err
 	}
+	controlURL, err := url.Parse(cfg.ControlURL)
+	if err != nil || controlURL.Host == "" {
+		return nil, errors.New("backend control_url must be an absolute URL")
+	}
+	var tlsConfig *tls.Config
+	switch transportMode {
+	case TransportMTLS:
+		if controlURL.Scheme != "https" {
+			return nil, fmt.Errorf(
+				"backend %s: control_url must use https when the transport is mtls (declared trust_mode %q, tls_mode %q)",
+				cfg.ID, cfg.TrustMode, cfg.TLSMode)
+		}
+		tlsConfig, err = makeTLSConfig(certPath, keyPath, caPath)
+		if err != nil {
+			return nil, err
+		}
+	case TransportPlain:
+		if controlURL.Scheme != "http" {
+			return nil, fmt.Errorf(
+				"backend %s: control_url must use http when the transport is plain (declared trust_mode %q, tls_mode %q)",
+				cfg.ID, cfg.TrustMode, cfg.TLSMode)
+		}
+	}
 	transport := &http.Transport{
-		TLSClientConfig: tlsConfig.Clone(),
 		DialContext: (&net.Dialer{
 			Timeout:   3 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -106,10 +129,16 @@ func NewClient(cfg config.BackendConfig, certPath, keyPath, caPath string) (*Cli
 		MaxIdleConnsPerHost: 8,
 		IdleConnTimeout:     90 * time.Second,
 	}
+	if tlsConfig != nil {
+		transport.TLSClientConfig = tlsConfig.Clone()
+	}
+	log.Printf("[backend] %s: transport=%s (trust_mode %q, tls_mode %q)",
+		cfg.ID, transportMode, cfg.TrustMode, cfg.TLSMode)
 	return &Client{
 		ID:          cfg.ID,
 		ControlURL:  strings.TrimRight(cfg.ControlURL, "/"),
 		GameAddress: cfg.GameAddress,
+		Transport:   transportMode,
 		http:        &http.Client{Transport: transport, Timeout: 4 * time.Second},
 		tlsConfig:   tlsConfig,
 	}, nil
@@ -149,8 +178,12 @@ func (c *Client) DialGame(ctx context.Context) (net.Conn, error) {
 	if c.GameAddress == "" {
 		return nil, errors.New("backend game address is empty")
 	}
+	netDialer := &net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second}
+	if c.Transport == TransportPlain {
+		return netDialer.DialContext(ctx, "tcp", c.GameAddress)
+	}
 	dialer := &tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second},
+		NetDialer: netDialer,
 		Config:    c.tlsConfig.Clone(),
 	}
 	return dialer.DialContext(ctx, "tcp", c.GameAddress)

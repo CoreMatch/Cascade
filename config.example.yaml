@@ -1,0 +1,110 @@
+# Cascade 配置示例。复制为 config.yaml 后按部署环境修改。
+# 首次启动时若 config.yaml 不存在，程序会生成一份默认配置（不含后端），
+# 本文件用于说明全部可配置项，尤其是后端传输相关字段。
+
+version: 2
+
+# --- 监听 ---
+game_listen_addr: ":5123"        # 游戏 TCP 监听地址（RW 客户端连入）
+http_listen_addr: ":8080"        # 管理/门面 HTTP 监听地址
+
+# --- 身份与路由 ---
+server_id: "cascade"
+relay_handshake_id: "net.rwhps.server"
+room_code_prefix: "GW"
+
+# --- 房间默认值 ---
+default_map_name: "unit_types_test.tmx"
+default_room_name: "Cascade Room"
+default_max_players: 8
+default_client_version: 151
+default_income: 1.0
+default_max_units: 200
+
+# --- 资源目录 ---
+maps_dir: "assets/maps"
+mods_dir: "assets/mods"
+
+# --- 存储 ---
+db_type: "sqlite"                # sqlite 或 mysql
+db_path: "data/cascade.db"       # db_type=sqlite 时生效
+# mysql_dsn: "user:pass@tcp(host:3306)/dbname?parseTime=true"
+
+# --- Redis（可选，玩家认证缓存） ---
+# redis_addr: "127.0.0.1:6379"
+# redis_password: ""
+# redis_db: 0
+# redis_prefix: "cascade"
+
+# --- HRPAuth（可选，玩家认证/认领） ---
+# hrpauth_url: "https://auth.example.net"
+# hrpauth_client_id: "..."
+# hrpauth_client_secret: "..."
+hrpauth_service_name: "Cascade"
+hrpauth_relay_prefix: "/rusted-warfare"
+presence_ttl_sec: 120
+
+# --- 代理行为 ---
+heartbeat_interval_sec: 2
+register_timeout_sec: 5
+read_timeout_sec: 90
+max_connections: 0               # 0 = 不限制
+chat_rate_limit: 5
+
+# --- 后端 ---
+# default_backend_id 必填；每个后端必须提供 id、control_url、game_address。
+default_backend_id: "backend-a"
+backends:
+  # 示例 1：后端按 open/ip 信任档运行（RW-HPS Go Server 的默认档是 open）。
+  # Cascade 按声明降级为明文传输：不建立 TLS、不需要任何证书材料，
+  # 但仍在游戏连接最前面发送 24 字节 CASC 前导，身份 JWT 流程不变。
+  # 明文传输没有传输机密性，也没有对端认证——仅适用于受信任网络。
+  - id: "backend-a"              # 必须等于后端的 backendId（JWT 的 aud）
+    control_url: "http://10.0.0.10:5125"   # 明文传输必须用 http://
+    game_address: "10.0.0.10:5124"
+    prefixes: ["GW"]
+    trust_mode: "open"           # 后端声明的信任档：open / ip / pinned
+    tls_mode: "auto"             # auto / mtls / plain，见下方说明
+
+  # 示例 2：后端按 pinned 信任档运行（校验代理客户端证书指纹）。
+  # Cascade 走 mTLS：control_url 必须 https://，且必须配置下方三件证书材料。
+  - id: "backend-b"
+    control_url: "https://backend-b.example.net:5125"
+    game_address: "backend-b.example.net:5124"
+    prefixes: ["EU"]
+    trust_mode: "pinned"
+    tls_mode: "auto"
+
+# trust_mode / tls_mode 语义（契约 Cascade-Backend-v1 v1.2 "Proxy transport
+# selection"）：
+#
+#   trust_mode  按后端实际配置声明其信任档：
+#     open   后端不校验来源与证书（RW-HPS Go Server 默认）
+#     ip     后端只接受白名单来源
+#     pinned 后端还校验代理客户端证书的 SHA-256 指纹
+#
+#   tls_mode  选择对该后端的传输方式：
+#     auto（默认，留空等同）按 trust_mode 推导：
+#       open / ip          -> plain（明文）
+#       pinned             -> mtls
+#       缺失或无法解析      -> mtls（最安全可用档，失败即关闭，绝不静默降级明文）
+#     mtls   强制 TLS + 客户端证书（后端声明 open 但实际配了服务端证书时用）
+#     plain  强制明文（与 trust_mode: pinned 冲突，启动报错）
+#
+#   传输决定后还会校验 control_url 协议：mtls 必须 https://，plain 必须 http://。
+
+# --- 代理身份 JWT（三档都照常签发；后端按档位决定是否验签） ---
+proxy_issuer: "cascade"
+proxy_key_id: "proxy-key-2026-01"
+proxy_private_key_path: "/run/secrets/proxy-ed25519-key.pem"  # Ed25519 PKCS#8，权限 0600
+
+# --- 后端 mTLS 材料（仅当存在 mtls 传输的后端时必填） ---
+# 全部后端都是 open/ip（明文）时可以完全省略这三项。
+backend_client_cert: "/run/secrets/proxy-client.crt"
+backend_client_key: "/run/secrets/proxy-client.key"   # 权限 0600（不允许 group/other 可读）
+backend_ca_pool: "/run/secrets/backend-ca.pem"        # 用于校验后端服务端证书
+
+# --- 后端探测 ---
+health_interval_sec: 5
+room_snapshot_interval_sec: 5
+pending_session_timeout_sec: 5

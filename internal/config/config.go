@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"log"
 	"os"
 	"strconv"
@@ -22,6 +20,13 @@ type BackendConfig struct {
 	ControlURL  string   `yaml:"control_url" json:"controlUrl"`
 	GameAddress string   `yaml:"game_address" json:"gameAddress"`
 	Prefixes    []string `yaml:"prefixes" json:"prefixes"`
+	// TrustMode is the backend trust strategy the operator declares for this
+	// backend ("open", "ip", or "pinned"). It drives the transport selection
+	// when TLSMode is "auto"; see backend.ResolveTransport.
+	TrustMode string `yaml:"trust_mode" json:"trustMode"`
+	// TLSMode selects the transport toward this backend: "auto" (default,
+	// derived from TrustMode), "mtls", or "plain".
+	TLSMode string `yaml:"tls_mode" json:"tlsMode"`
 }
 
 // Config holds all runtime configuration.
@@ -536,12 +541,4 @@ func lookupEnvFloat32(key string) (float32, bool) {
 		}
 	}
 	return 0, false
-}
-
-func randomHex(n int) string {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return "cascade-relay"
-	}
-	return hex.EncodeToString(buf)
 }

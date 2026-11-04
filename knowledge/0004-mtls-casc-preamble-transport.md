@@ -1,6 +1,7 @@
 # 0004 — mTLS + 24-Byte CASC Preamble + Byte Passthrough
 
-- **Status**: accepted
+- **Status**: accepted (preamble and passthrough current; the "always mTLS"
+  transport decision below is superseded by 0006 as of 2026-11-05)
 - **Date**: 2026-11-04 (introduced in commit `51e81b8`, 2026-10-25; magic
   renamed `MCAG` → `CASC` in `69faeb7`)
 
@@ -43,14 +44,16 @@ client→backend, `:112` for backend→client). The only packets the proxy
 inspects are those it must act on (identity gate in 0003, chat commands for
 HRPAuth login/claim at `session.go:90-92`).
 
-**Proxy-side transport is always mutual TLS.** Toward every backend, both
-the `/v1` control plane and the game TCP dial use TLS with a client
-certificate: `control_url` must be an absolute `https` URL
-(`internal/backend/client.go:91-94`); the TLS configuration requires a
-client certificate, key, and CA pool, rejects group/other-readable private
-keys, and enforces TLS >= 1.2 (`client.go:118-146`); the game connection
-dials with the same configuration (`client.go:148-157`). Configuration
-refuses to start without all three material paths (`README.md:9,32`).
+**Proxy-side transport was always mutual TLS.** _(Superseded by 0006,
+2026-11-05: transport is now derived per backend from the declared trust
+strategy — plaintext for `open`/`ip`, mTLS for `pinned` or when the
+declaration is missing/unparseable. The description below is the historical
+v1-era behavior.)_ Toward every backend, both the `/v1` control plane and
+the game TCP dial used TLS with a client certificate: `control_url` had to
+be an absolute `https` URL; the TLS configuration required a client
+certificate, key, and CA pool, rejected group/other-readable private keys,
+and enforced TLS >= 1.2; the game connection dialed with the same
+configuration. Startup refused to start without all three material paths.
 
 **Interplay with the backend trust strategies.** The proxy unconditionally
 presents its client certificate and signs identity JWTs regardless of which
@@ -68,23 +71,24 @@ checks (contract, "Backend trust strategies"):
   with code `FORBIDDEN`.
 
 The proxy implementation predates v1.1 (v1 mandated mutual TLS plus Ed25519
-signature verification) and has not been relaxed since: it still always
-provisions mTLS material and still signs JWTs. That is compatible with all
-three strategies — contract v1.1 explicitly notes the proxy "still signs
-JWTs and may still present client certificates — backends without
-fingerprint checks simply do not require them" (Changelog, v1 → v1.1).
+signature verification). It originally always provisioned mTLS material and
+always signed JWTs; contract v1.1 noted the proxy "still signs JWTs and may
+still present client certificates — backends without fingerprint checks
+simply do not require them" (Changelog, v1 → v1.1). Since 0006 (2026-11-05,
+contract v1.2) the proxy derives the transport from the declared trust
+strategy instead of always provisioning mTLS, but it still signs JWTs on
+every bind regardless of strategy.
 
 ## Consequences
 
 Costs and limitations:
 
-- The proxy is **over-provisioned under `open` and `ip` backends**:
-  deployments must generate and mount client certificates, keys, CAs, and an
-  Ed25519 signing key even when the backend checks none of them. Author
-  confirmation (2026-11-04): there are no plans to relax this, because it
-  had not been realized that relaxation should be considered; the resulting
-  structural mismatch with the contract's transport/trust separation is
-  recorded in 0006 (proposed, not implemented).
+- The proxy **was over-provisioned under `open` and `ip` backends**:
+  deployments had to generate and mount client certificates, keys, CAs, and
+  an Ed25519 signing key even when the backend checked none of them.
+  Resolved by 0006 (accepted 2026-11-05): `open`/`ip` backends now connect
+  in plaintext with no certificate material; only the Ed25519 signing key is
+  still always required, because the proxy signs JWTs on every bind.
 - The preamble is a hard compatibility boundary: unknown magic, version, or
   header size makes the backend close the connection (contract). The magic
   rename `MCAG` → `CASC` in `69faeb7` therefore invalidates old backends
@@ -109,9 +113,11 @@ Benefits:
 - `internal/proxy/server.go:153-167` — session ID generation, preamble
   write, then raw forwarding of the first packet.
 - `internal/proxy/session.go:93,112` — raw passthrough in both directions.
-- `internal/backend/client.go:91-94` (https-only control URL),
-  `:118-146` (`makeTLSConfig`: cert/key/CA required, key permission check,
-  TLS >= 1.2), `:148-157` (`DialGame` with the same TLS config).
+- `internal/backend/client.go` as of commit `1858901` (line references
+  historical; the always-mTLS transport was replaced in 0006): `:91-94`
+  (https-only control URL), `:118-146` (`makeTLSConfig`: cert/key/CA
+  required, key permission check, TLS >= 1.2), `:148-157` (`DialGame` with
+  the same TLS config). Current transport evidence lives in 0006.
 - HA-Contract repository, `docs/dev/Cascade/Cascade-Backend-v1.md`:
   "Transport and trust", "Backend trust strategies" (open/ip/pinned,
   `FORBIDDEN`), "Game TCP preamble" (layout table, rejection behavior),
@@ -120,5 +126,6 @@ Benefits:
 - Commits: `51e81b8` (transport introduced), `69faeb7` (magic `MCAG` →
   `CASC`, BREAKING CHANGE), `7750528` (in-repo contract copies removed once
   HA-Contract became authoritative).
-- `README.md:9,32,42` — mandatory mTLS material, permission requirements,
-  MCAGS-RW upgrade note.
+- `README.md` as of commit `1858901` (historical; reworded in 0006's commit
+  `193de11`) — mandatory mTLS material, permission requirements, MCAGS-RW
+  upgrade note.

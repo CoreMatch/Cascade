@@ -6,7 +6,7 @@ Cascade 是 Rusted Warfare 群组服务器的边缘反向代理。它接收客�
 
 ## 配置与运行
 
-程序首次启动会生成 `config.yaml`。启动前必须配置默认后端、mTLS 文件和代理签名密钥；不会自动猜测后端地址。最小后端配置示例：
+程序首次启动会生成 `config.yaml`。启动前必须配置默认后端和代理签名密钥；不会自动猜测后端地址。全部配置项及注释见 [`config.example.yaml`](config.example.yaml)。最小后端配置示例（后端按 `open` 信任档运行，明文传输）：
 
 ```yaml
 version: 2
@@ -15,21 +15,19 @@ http_listen_addr: ":8080"
 default_backend_id: "backend-a"
 backends:
   - id: "backend-a"
-    control_url: "https://backend-a.example.net"
+    control_url: "http://backend-a.example.net:5125"
     game_address: "backend-a.example.net:5124"
     prefixes: ["GW"]
+    trust_mode: "open"
 proxy_issuer: "cascade"
 proxy_key_id: "proxy-key-2026-01"
 proxy_private_key_path: "/run/secrets/proxy-ed25519-key.pem"
-backend_client_cert: "/run/secrets/proxy-client.crt"
-backend_client_key: "/run/secrets/proxy-client.key"
-backend_ca_pool: "/run/secrets/backend-ca.pem"
 health_interval_sec: 5
 room_snapshot_interval_sec: 5
 pending_session_timeout_sec: 5
 ```
 
-控制 API 和游戏 TCP 均使用 mTLS。证书、CA 和 Ed25519 PKCS#8 私钥通过受限文件挂载；客户端私钥和签名私钥权限不能允许 group/other 访问。首次试运行可执行：
+对每个后端，传输方式按契约 v1.2 从后端声明的信任档推导：每后端 `trust_mode` 声明其信任档（`open`/`ip`/`pinned`），`tls_mode`（`auto`/`mtls`/`plain`，默认 `auto`）决定是否覆盖。`auto` 时 `open`/`ip` 走明文、`pinned` 走 mTLS，声明缺失或无法解析时按最安全可用档走 mTLS（失败即关闭，不静默降级明文）。明文传输没有传输机密性与对端认证，仅适用于受信任网络。走 mTLS 的后端要求 `control_url` 为 `https` 并配置下方三件证书材料；走明文的后端要求 `control_url` 为 `http`，不需要任何证书材料。证书、CA 和 Ed25519 PKCS#8 私钥通过受限文件挂载；客户端私钥和签名私钥权限不能允许 group/other 访问。首次试运行可执行：
 
 ```bash
 go run ./cmd/cascade
@@ -53,4 +51,4 @@ go run ./cmd/cascade
 
 ## 验证范围
 
-仓内测试覆盖配置迁移、OpenAPI YAML 解析、路由目录、mTLS 控制与游戏传输、JWT 身份绑定和 RW 帧转发。它们不等同于真实客户端兼容验收。正式切换前仍需使用独立后端和真实 Rusted Warfare 客户端完成握手、入房及一局游戏，并在维护窗口切换。
+仓内测试覆盖配置迁移、OpenAPI YAML 解析、路由目录、按信任档推导的明文与 mTLS 控制/游戏传输、JWT 身份绑定和 RW 帧转发。它们不等同于真实客户端兼容验收。正式切换前仍需使用独立后端和真实 Rusted Warfare 客户端完成握手、入房及一局游戏，并在维护窗口切换。
