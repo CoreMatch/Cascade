@@ -50,3 +50,7 @@ Each entry is one page in ADR style:
 | [0004](0004-mtls-casc-preamble-transport.md) | mTLS + 24-Byte CASC Preamble + Byte Passthrough | accepted (transport part superseded by 0006) | 2026-11-04 |
 | [0005](0005-hrpauth-presence-and-path-resolution.md) | HRPAuth Presence and Runtime Path Resolution | accepted | 2026-11-04 |
 | [0006](0006-plaintext-backends-unreachable.md) | Transport Follows the Backend's Declared Trust Strategy | accepted | 2026-11-05 |
+
+Appendix (not an ADR): [plaintext-transport end-to-end test for the RW-HPS
+Go Server](appendix-plain-transport-e2e.md), parked here until it lands in
+the RW-HPS repository (referenced by 0006).

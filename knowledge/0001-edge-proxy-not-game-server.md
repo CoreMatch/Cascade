@@ -61,6 +61,36 @@ v0→v2 migration, and the `github.com/lafriks/go-tiled` dependency (its only
 import was `internal/game/map.go`). Existing `config.yaml` files keep
 loading: removed keys are ignored on unmarshal.
 
+A follow-up sweep on the same day (commits `ee4ed17`, `fef51a7`) removed
+the remaining relay-era leftovers with zero callers: the relay/game
+simulation codec (prompt/relay/tick/sync/server-info/start-game encoders,
+`game_subcommand.go`, gzip block machinery, and the packet-type constants
+only they referenced), the 79 unused i18n moderation/game-flow messages and
+label tables, the `Store` methods `GetBindingByPlayerName`,
+`UpdateBindingHAUUID`, and the DB-side `SetQuickAuth`, the
+`InternalKey()` getter, `redis.Client.ClearAuthenticated`, and
+`backend.Client.BaseURL`.
+
+**Deliberately kept, pending an author decision** (designed but unwired —
+not pivot leftovers, so not deleted under the confirmation above):
+
+- `database.Store.CleanupStaleProxyBindings` — a coherent maintenance
+  operation (delete CBH=0 bindings idle for 30 days) with no caller; no
+  scheduler exists in the proxy. Wire it up or delete it.
+- The Redis quick-auth pair `SetQuickAuth`/`CheckQuickAuth` and the
+  `quick_auth` branch of `session.restoreAuth` — the read path runs on
+  every bind, but nothing writes the key, so the branch can never fire.
+  Wire up the write side (e.g. on disconnect for reconnect support) or
+  delete the whole path; the DB `quick_auth` column is migration schema
+  and stays either way.
+- The `players` table (migration `000001`) and the `Player` model —
+  created by the immutable migration history and kept in `AutoMigrate`
+  parity, but no code reads or writes player rows. Dropping the table
+  needs a new migration, which is a schema decision.
+- Test-only protocol primitives (`Reader`/`Writer` methods, `ReadPacket`,
+  `backend.ReadPreamble`) — they document and verify the wire format and
+  are exercised by the integration tests.
+
 ## Consequences
 
 Costs and limitations:
