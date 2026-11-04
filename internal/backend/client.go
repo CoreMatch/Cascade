@@ -295,5 +295,3 @@ func (c *Client) doStatus(ctx context.Context, method, path string, body, out an
 	}
 	return 0, fmt.Errorf("backend request failed after %d attempt(s): %w", attempts, lastErr)
 }
-
-func (c *Client) BaseURL() string { return c.ControlURL }
