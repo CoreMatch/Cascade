@@ -19,11 +19,18 @@ import (
 	"cascade/internal/redis"
 )
 
+// authCache is the subset of the Redis auth-state operations the session
+// logic needs; tests substitute a fake.
+type authCache interface {
+	IsAuthenticated(gameUUID string) (string, bool)
+	SetAuthenticated(gameUUID, haUserUUID string, ttl time.Duration) error
+}
+
 type Server struct {
 	cfg         config.Config
 	logger      *log.Logger
 	db          database.Store
-	rdb         *redis.Client
+	rdb         authCache
 	auth        *auth.Client
 	directory   *backend.Directory
 	signer      *tokenSigner
@@ -39,8 +46,12 @@ func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *re
 	if err != nil {
 		return nil, err
 	}
+	var cache authCache
+	if rdb != nil {
+		cache = rdb
+	}
 	server := &Server{
-		cfg: cfg, logger: logger, db: db, rdb: rdb, auth: authClient,
+		cfg: cfg, logger: logger, db: db, rdb: cache, auth: authClient,
 		directory: directory, signer: signer,
 	}
 	if err := server.validate(); err != nil {

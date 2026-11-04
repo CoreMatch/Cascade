@@ -65,7 +65,7 @@ The resolved transport is reported per backend in `/api/backends`
 
 **Identity semantics are unchanged.** The 24-byte `CASC` preamble is still
 written first on every game connection regardless of transport
-(`internal/proxy/server.go:153-167`); the proxy still signs Ed25519 JWTs on
+(`internal/proxy/server.go:164-178`); the proxy still signs Ed25519 JWTs on
 every bind (`internal/proxy/token.go`); only `Preregister` passes before a
 session is bound (`internal/proxy/session.go:108-110`); bind failures are
 still recorded by `logBindFailure` at error level without the JWT

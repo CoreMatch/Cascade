@@ -123,6 +123,10 @@ func (a *App) Run(ctx context.Context) error {
 		go presenceLoop(ctx, a.authClient, a.cfg.PresenceTTLSec, presenceInterval(a.cfg.PresenceTTLSec), a.logger)
 	}
 
+	// Periodically delete guest bindings idle beyond the store's policy
+	// window; independent of the presence loop above.
+	go bindingCleanupLoop(ctx, a.db, bindingCleanupInterval, a.logger)
+
 	go func() {
 		a.logger.Printf("http listener started on %s", a.cfg.HTTPListenAddr)
 		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"cascade/internal/backend"
+	"cascade/internal/database"
 	"cascade/internal/protocol"
 )
 
@@ -115,5 +116,82 @@ func TestBindFailureLogCarriesDiagnostics(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Fatalf("log line missing %q: %s", want, line)
 		}
+	}
+}
+
+// fakeAuthCache is a test double for the Redis auth-state cache.
+type fakeAuthCache struct {
+	uuid string
+	ok   bool
+}
+
+func (f *fakeAuthCache) IsAuthenticated(string) (string, bool) { return f.uuid, f.ok }
+
+func (f *fakeAuthCache) SetAuthenticated(string, string, time.Duration) error { return nil }
+
+// fakeStore satisfies database.Store for restoreAuth tests; only the
+// binding lookup is exercised.
+type fakeStore struct {
+	binding *database.PlayerBinding
+}
+
+func (f *fakeStore) GetBindingByGameUUID(string) (*database.PlayerBinding, error) {
+	return f.binding, nil
+}
+func (f *fakeStore) GetBindingsByHAUUID(string) ([]database.PlayerBinding, error) {
+	return nil, nil
+}
+func (f *fakeStore) CreateProxyBinding(string, string) error  { return nil }
+func (f *fakeStore) ClaimBinding(string, string) error        { return nil }
+func (f *fakeStore) GetLang(string) (string, error)           { return "en", nil }
+func (f *fakeStore) SetLang(string, string) error             { return nil }
+func (f *fakeStore) CleanupStaleProxyBindings() (int64, error) { return 0, nil }
+func (f *fakeStore) Close() error                             { return nil }
+
+func TestRestoreAuthOnlyTrustsCachedStateWithABinding(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		cache       *fakeAuthCache
+		store       *fakeStore
+		wantAuth    bool
+		wantHAUUID  string
+	}{
+		{
+			name:       "cached auth with an existing binding restores the session",
+			cache:      &fakeAuthCache{uuid: "ha-user-1", ok: true},
+			store:      &fakeStore{binding: &database.PlayerBinding{GameUUID: "game-1"}},
+			wantAuth:   true,
+			wantHAUUID: "ha-user-1",
+		},
+		{
+			name:  "cached auth without a binding stays unauthenticated",
+			cache: &fakeAuthCache{uuid: "ha-user-1", ok: true},
+			store: &fakeStore{},
+		},
+		{
+			name:  "no cached auth stays unauthenticated",
+			cache: &fakeAuthCache{},
+			store: &fakeStore{binding: &database.PlayerBinding{GameUUID: "game-1"}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sess := &session{
+				server:   &Server{rdb: test.cache, db: test.store},
+				playerID: "game-1",
+			}
+			sess.restoreAuth()
+			if sess.authenticated != test.wantAuth || sess.haUserUUID != test.wantHAUUID {
+				t.Fatalf("restoreAuth = (authenticated=%v, uuid=%q), want (%v, %q)",
+					sess.authenticated, sess.haUserUUID, test.wantAuth, test.wantHAUUID)
+			}
+		})
+	}
+}
+
+func TestRestoreAuthWithoutRedisOrDatabaseIsANoOp(t *testing.T) {
+	sess := &session{server: &Server{}, playerID: "game-1"}
+	sess.restoreAuth() // must not panic
+	if sess.authenticated {
+		t.Fatal("session became authenticated without a cache or database")
 	}
 }

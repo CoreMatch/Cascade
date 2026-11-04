@@ -175,14 +175,6 @@ func (s *session) restoreAuth() {
 		if binding, err := s.server.db.GetBindingByGameUUID(s.playerID); err == nil && binding != nil {
 			s.haUserUUID = uuid
 			s.authenticated = true
-			return
-		}
-	}
-	if uuid, ok := s.server.rdb.CheckQuickAuth(s.playerID); ok {
-		if binding, err := s.server.db.GetBindingByGameUUID(s.playerID); err == nil && binding != nil {
-			s.haUserUUID = uuid
-			s.authenticated = true
-			_ = s.server.rdb.SetAuthenticated(s.playerID, uuid, 24*time.Hour)
 		}
 	}
 }

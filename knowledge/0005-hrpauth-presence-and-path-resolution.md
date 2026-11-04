@@ -25,7 +25,7 @@ directory.
   (delayed 2 s, non-blocking): `POST /services/presence` with
   `{name, ttl_seconds, security_level: 0}`, then relay rules, an internal
   key refresh, and the embedded SDK package upload
-  (`internal/app/app.go:113-124,149-178`;
+  (`internal/app/app.go:115-124,153-182`;
   `internal/auth/client.go:303-310,314-335`).
 - A renewal loop re-posts the same presence record at **half the TTL**
   (`internal/app/presence.go:25-30,46-67`), so a renewal lands well before
@@ -54,7 +54,7 @@ directory.
     (`internal/config/config.go:117-155`).
   - the SQLite `db_path` — an existing database found next to the
     executable wins over creating a fresh one in the cwd
-    (`internal/app/app.go:44-57`).
+    (`internal/app/app.go:44-58`).
   - the migrations directory
     (`internal/database/migrate.go:51-58`).
 - A missing migrations directory is **fatal**: startup aborts with
@@ -103,9 +103,9 @@ illustrative example, not a prescribed value.
 
 ## Evidence
 
-- `internal/app/app.go:113-124` (startup registration goroutine + renewal
-  loop), `:149-178` (`registerService`: presence, relay, internal key, SDK
-  upload), `:44-57` (sqlite `db_path` resolution).
+- `internal/app/app.go:115-124` (startup registration goroutine + renewal
+  loop), `:153-182` (`registerService`: presence, relay, internal key, SDK
+  upload), `:44-58` (sqlite `db_path` resolution).
 - `internal/app/presence.go:12-14` (backoff bounds), `:25-30` (half-TTL
   interval; `<=0` disables), `:33-39` (backoff doubling), `:41-67` (loop;
   comment documenting the missing deregister endpoint).
