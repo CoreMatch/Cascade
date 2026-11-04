@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"bytes"
-	"compress/gzip"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -16,10 +15,6 @@ type Reader struct {
 
 func NewReader(data []byte) *Reader {
 	return &Reader{data: data}
-}
-
-func (r *Reader) Remaining() int {
-	return len(r.data) - r.off
 }
 
 func (r *Reader) Byte() (byte, error) {
@@ -99,15 +94,7 @@ func (r *Reader) MaybeString() (string, error) {
 }
 
 type Writer struct {
-	buf      bytes.Buffer
-	blocks   []blockEntry
-	blockBuf *Writer // non-nil when inside a named block
-}
-
-type blockEntry struct {
-	name       string
-	compressed bool
-	data       []byte
+	buf bytes.Buffer
 }
 
 func NewWriter() *Writer {
@@ -115,25 +102,11 @@ func NewWriter() *Writer {
 }
 
 func (w *Writer) Bytes() []byte {
-	if w.blockBuf != nil {
-		return w.blockBuf.Bytes()
-	}
 	return w.buf.Bytes()
 }
 
 func (w *Writer) Packet(packetType int32) Packet {
 	body := append([]byte(nil), w.buf.Bytes()...)
-	for _, blk := range w.blocks {
-		// Write block name (Java Modified UTF-8 string)
-		payload, _ := appendJavaUTF(nil, blk.name)
-		body = append(body, payload...)
-		// Write block data length (big-endian int32)
-		var lenBuf [4]byte
-		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(blk.data)))
-		body = append(body, lenBuf[:]...)
-		// Write block data
-		body = append(body, blk.data...)
-	}
 	return Packet{Type: packetType, Body: body}
 }
 
@@ -165,16 +138,6 @@ func (w *Writer) Float32(value float32) {
 	w.Int32(int32(math.Float32bits(value)))
 }
 
-func (w *Writer) Short(value int16) {
-	var buf [2]byte
-	binary.BigEndian.PutUint16(buf[:], uint16(value))
-	w.buf.Write(buf[:])
-}
-
-func (w *Writer) Enum(ordinal int32) {
-	w.Int32(ordinal)
-}
-
 func (w *Writer) Raw(value []byte) {
 	w.buf.Write(value)
 }
@@ -188,12 +151,6 @@ func (w *Writer) String(value string) error {
 	return nil
 }
 
-func (w *Writer) MustString(value string) {
-	if err := w.String(value); err != nil {
-		panic(fmt.Sprintf("protocol encode string failed: %v", err))
-	}
-}
-
 func (w *Writer) MaybeString(value string) error {
 	if value == "" {
 		w.Bool(false)
@@ -201,130 +158,6 @@ func (w *Writer) MaybeString(value string) error {
 	}
 	w.Bool(true)
 	return w.String(value)
-}
-
-func (w *Writer) MaybeInt32(value int32, exists bool) {
-	w.Bool(exists)
-	if exists {
-		w.Int32(value)
-	}
-}
-
-// StartBlock begins a named block. Data written after this call goes into
-// the block buffer until EndBlock is called. If compress is true, the block
-// data is gzip-compressed when flushed.
-func (w *Writer) StartBlock(name string, compress bool) {
-	w.blockBuf = &Writer{}
-	w.blocks = append(w.blocks, blockEntry{name: name, compressed: compress})
-}
-
-// EndBlock finalizes the current named block and appends it to the pending list.
-func (w *Writer) EndBlock() error {
-	if w.blockBuf == nil {
-		return fmt.Errorf("EndBlock called without StartBlock")
-	}
-	blk := &w.blocks[len(w.blocks)-1]
-	data := w.blockBuf.Bytes()
-	if blk.compressed {
-		var compressed bytes.Buffer
-		gz := gzip.NewWriter(&compressed)
-		if _, err := gz.Write(data); err != nil {
-			return err
-		}
-		if err := gz.Close(); err != nil {
-			return err
-		}
-		blk.data = compressed.Bytes()
-	} else {
-		blk.data = data
-	}
-	w.blockBuf = nil
-	return nil
-}
-
-// GzipSection is a convenience wrapper around StartBlock/EndBlock.
-func (w *Writer) GzipSection(name string, fn func(section *Writer) error) error {
-	w.StartBlock(name, true)
-	if err := fn(w.blockBuf); err != nil {
-		return err
-	}
-	return w.EndBlock()
-}
-
-// BlockSection writes a named block without compression.
-func (w *Writer) BlockSection(name string, fn func(section *Writer) error) error {
-	w.StartBlock(name, false)
-	if err := fn(w.blockBuf); err != nil {
-		return err
-	}
-	return w.EndBlock()
-}
-
-// DecodeGameCommandPacket decodes a client-sent game command (type 20).
-// The payload is wrapped in a gzip block named "c". We extract the raw bytes.
-func DecodeGameCommandPacket(body []byte) (GameCommandPacket, error) {
-	r := NewReader(body)
-	// The client sends the command data wrapped in a "c" block
-	// Read block name
-	blockName, err := r.String()
-	if err != nil {
-		// Fallback: some clients may send raw data without block wrapping
-		return GameCommandPacket{
-			Packet: Packet{Type: TypeGameCommand, Body: body},
-			Data:   body,
-		}, nil
-	}
-	// Read block data length
-	blockLen, err := r.Int32()
-	if err != nil {
-		return GameCommandPacket{}, err
-	}
-	if r.off+int(blockLen) > len(r.data) {
-		return GameCommandPacket{}, io.ErrUnexpectedEOF
-	}
-	data := r.data[r.off : r.off+int(blockLen)]
-
-	// If the block name is "c", it's a raw command block (not gzip-compressed)
-	// We need to decompress if it's gzip
-	if blockName == "c" {
-		decompressed, derr := gunzipBytes(data)
-		if derr == nil {
-			data = decompressed
-		}
-		// If decompression fails, use raw data (it may not be compressed)
-	}
-
-	return GameCommandPacket{
-		Packet: Packet{Type: TypeGameCommand, Body: body},
-		Data:   data,
-	}, nil
-}
-
-func gunzipBytes(data []byte) ([]byte, error) {
-	gr, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	defer gr.Close()
-	return io.ReadAll(gr)
-}
-
-func DecodePromptReply(body []byte) (string, error) {
-	r := NewReader(body)
-	if err := r.Skip(5); err != nil {
-		return "", err
-	}
-	return r.String()
-}
-
-func EncodePrompt(message string) (Packet, error) {
-	w := NewWriter()
-	w.Byte(1)
-	w.Int32(5)
-	if err := w.String(message); err != nil {
-		return Packet{}, err
-	}
-	return w.Packet(TypeRelayPrompt), nil
 }
 
 func EncodeChat(from, message string) (Packet, error) {
@@ -413,80 +246,10 @@ func DecodePreregister(body []byte) (PreregisterInfo, error) {
 	return info, nil
 }
 
-func EncodeRelayBecomeServer(uuid string, isOwner bool, roomCode string, version int) (Packet, error) {
-	w := NewWriter()
-	// RW uses 172 as a threshold for new relay protocol
-	if version >= 172 {
-		w.Byte(2) // Packet Version
-		w.Bool(true)
-		w.Bool(true)
-		w.Bool(true)
-		if err := w.String(uuid); err != nil {
-			return Packet{}, err
-		}
-		w.Bool(false) // isMod
-		w.Bool(true)  // showPublicly
-		w.Bool(true)
-		if err := w.String("Relay: " + roomCode); err != nil {
-			return Packet{}, err
-		}
-		w.Bool(false) // useMulticast
-		if err := w.MaybeString(uuid); err != nil {
-			return Packet{}, err
-		}
-	} else {
-		w.Byte(1) // Packet Version
-		w.Bool(true)
-		w.Bool(true)
-		if err := w.MaybeString(uuid); err != nil {
-			return Packet{}, err
-		}
-		w.Bool(false) // useMods
-		w.Bool(true)  // showPublicly
-		if err := w.String("Relay: " + roomCode); err != nil {
-			return Packet{}, err
-		}
-		w.Bool(false) // useMulticast
-	}
-	return w.Packet(TypeRelayBecomeServer), nil
-}
-
-func EncodeRelayPow(resultInt int32) Packet {
-	w := NewWriter()
-	w.Int32(resultInt)
-	w.Int32(0)     // authenticateType = 0 (No PoW required)
-	w.Bool(false)  // hasInitInt1
-	w.Bool(false)  // hasInitInt2
-	w.Bool(false)  // unknown_false
-	return w.Packet(TypeRelayPow)
-}
-
 func RequireNoError(err error) {
 	if err != nil {
 		panic(fmt.Sprintf("protocol encode failed: %v", err))
 	}
-}
-
-// EncodeTickEmpty generates an empty TICK packet (no commands, just advance the tick counter).
-func EncodeTickEmpty(tick int32) Packet {
-	w := NewWriter()
-	w.Int32(tick)
-	w.Int32(0) // command count = 0
-	return w.Packet(TypeTick)
-}
-
-// EncodeTickCommands generates a TICK packet containing one or more game commands.
-// Each command's raw bytes are wrapped in an uncompressed "c" block.
-func EncodeTickCommands(tick int32, commands [][]byte) Packet {
-	w := NewWriter()
-	w.Int32(tick)
-	w.Int32(int32(len(commands)))
-	for _, cmd := range commands {
-		w.StartBlock("c", false)
-		w.blockBuf.Raw(cmd)
-		w.EndBlock()
-	}
-	return w.Packet(TypeTick)
 }
 
 // EncodeKick generates a KICK packet with a reason string.
@@ -494,335 +257,4 @@ func EncodeKick(reason string) Packet {
 	w := NewWriter()
 	RequireNoError(w.String(reason))
 	return w.Packet(TypeKick)
-}
-
-// EncodeHeartbeat generates a HEART_BEAT packet (server→client).
-func EncodeHeartbeat() Packet {
-	w := NewWriter()
-	w.Int64(0) // random nonce
-	w.Byte(0)
-	return w.Packet(TypeHeartbeat)
-}
-
-// EncodePreRegisterResponse generates the REGISTER_CONNECTION (type 161) response.
-func EncodePreRegisterResponse(handshakeID string, uuid string, clientVersion int32) Packet {
-	w := NewWriter()
-	RequireNoError(w.String(handshakeID))
-	w.Int32(1) // packet version
-	w.Int32(clientVersion)
-	w.Int32(clientVersion)
-	RequireNoError(w.String("com.corrodinggames.rts.server"))
-	RequireNoError(w.String(uuid))
-	w.Int32(javaHash("Dr @ 2022"))
-	return w.Packet(TypePreregister)
-}
-
-// ModUnitDef is the minimal unit metadata needed for the customUnits block.
-type ModUnitDef struct {
-	ModName  string
-	UnitName string
-	UnitID   int32
-}
-
-// ServerInfoConfig holds the game settings needed to encode SERVER_INFO.
-type ServerInfoConfig struct {
-	MapType            int32
-	MapName            string
-	Credits            int32
-	FogType            int32
-	IsAdmin            bool
-	MaxUnitsPerPlayer  int32
-	StartingUnits      int32
-	Income             float32
-	DisableNuke        bool
-	SharedControl      bool
-	CustomUnits        []ModUnitDef // mod units to advertise; nil = empty
-}
-
-// EncodeServerInfo generates the SERVER_INFO (type 106) packet.
-func EncodeServerInfo(cfg ServerInfoConfig, clientVersion int32) Packet {
-	w := NewWriter()
-	RequireNoError(w.String("com.corrodinggames.rts"))
-	w.Int32(clientVersion)
-	w.Int32(cfg.MapType)
-	RequireNoError(w.String(cfg.MapName))
-	w.Int32(cfg.Credits)
-	w.Int32(cfg.FogType)
-	w.Bool(true)
-	w.Int32(1)
-	w.Byte(4)
-	w.Bool(false)
-	w.Bool(cfg.IsAdmin)
-	w.Int32(cfg.MaxUnitsPerPlayer)
-	w.Int32(cfg.MaxUnitsPerPlayer)
-	w.Int32(cfg.StartingUnits)
-	w.Float32(cfg.Income)
-	w.Bool(cfg.DisableNuke)
-	w.Bool(false)
-	w.Bool(true)
-
-	// Custom units block
-	w.StartBlock("customUnits", false)
-	w.Int32(1)
-	w.Int32(int32(len(cfg.CustomUnits)))
-	for _, u := range cfg.CustomUnits {
-		RequireNoError(w.String(u.UnitName))
-		w.Int32(u.UnitID)
-		w.Bool(true)
-		if u.ModName == "" || u.ModName == "default" {
-			w.Bool(false) // no mod name prefix
-		} else {
-			w.Bool(true)
-			RequireNoError(w.String(u.ModName))
-		}
-		w.Int64(0)
-		w.Int64(0)
-	}
-	w.EndBlock()
-
-	w.Bool(cfg.SharedControl)
-	w.Bool(false)
-	w.Bool(false)
-	return w.Packet(TypeServerInfo)
-}
-
-// EncodeStartGame generates the START_GAME (type 120) packet with map data.
-func EncodeStartGame(mapName string, mapData []byte, isCustomMap bool) Packet {
-	w := NewWriter()
-	w.Byte(0)
-	if isCustomMap {
-		w.Int32(1) // custom map
-		// Write map data as raw bytes (the client expects the file content)
-		w.Int32(int32(len(mapData)))
-		w.Raw(mapData)
-		RequireNoError(w.String(mapName))
-	} else {
-		w.Int32(0) // official map
-		RequireNoError(w.String("maps/skirmish/" + mapName))
-	}
-	w.Bool(false)
-	return w.Packet(TypeStartGame)
-}
-
-// EncodeSyncChecksum generates the SYNC_CHECKSUM (type 30) packet.
-func EncodeSyncChecksum(step int32) Packet {
-	w := NewWriter()
-	w.Int32(step)
-	w.Int64(0)
-	w.Int32(15) // checksum count
-	for i := 0; i < 15; i++ {
-		w.Int64(0)
-	}
-	return w.Packet(TypeSyncChecksum)
-}
-
-// DecodeSyncChecksumResponse parses a SYNC_CHECKSUM_RESPONSE (type 31) packet from a client.
-func DecodeSyncChecksumResponse(body []byte) ([]int64, error) {
-	r := NewReader(body)
-
-	// byte prefix (discard)
-	if _, err := r.Byte(); err != nil {
-		return nil, err
-	}
-	// serverTick (discard)
-	if _, err := r.Int32(); err != nil {
-		return nil, err
-	}
-	// clientTick (discard)
-	if _, err := r.Int32(); err != nil {
-		return nil, err
-	}
-	// hasData boolean
-	hasData, err := r.Bool()
-	if err != nil {
-		return nil, err
-	}
-	if !hasData {
-		return nil, nil
-	}
-
-	// Two placeholder longs
-	if _, err := r.Int64(); err != nil {
-		return nil, err
-	}
-	if _, err := r.Int64(); err != nil {
-		return nil, err
-	}
-
-	// Read "checksum" block
-	blockName, err := r.String()
-	if err != nil {
-		return nil, err
-	}
-	blockLen, err := r.Int32()
-	if err != nil {
-		return nil, err
-	}
-	if r.off+int(blockLen) > len(r.data) {
-		return nil, nil
-	}
-	blockData := r.data[r.off : r.off+int(blockLen)]
-
-	if blockName != "checksum" {
-		return nil, nil
-	}
-
-	// Parse checksum block
-	br := NewReader(blockData)
-	// Placeholder int
-	if _, err := br.Int32(); err != nil {
-		return nil, err
-	}
-	// Count
-	count, err := br.Int32()
-	if err != nil {
-		return nil, err
-	}
-
-	checksums := make([]int64, count)
-	for i := int32(0); i < count; i++ {
-		// prefix (discard)
-		if _, err := br.Int64(); err != nil {
-			return nil, err
-		}
-		// checkData
-		checkData, err := br.Int64()
-		if err != nil {
-			return nil, err
-		}
-		checksums[i] = checkData
-	}
-
-	return checksums, nil
-}
-
-// EncodeReturnToBattleroom generates the RETURN_TO_BATTLEROOM (type 122) packet.
-func EncodeReturnToBattleroom() Packet {
-	w := NewWriter()
-	w.Byte(0)
-	return w.Packet(TypeReturnToBattleRoom)
-}
-
-// EncodeSyncPullSave generates a SYNC (type 35) packet requesting clients to upload their save.
-func EncodeSyncPullSave(step int32, defaultSave []byte) Packet {
-	w := NewWriter()
-	w.Byte(0)
-	w.Int32(step)
-	w.Int32(step / 10)
-	w.Float32(1.0)
-	w.Float32(1.0)
-	w.Bool(true)  // isPullSave = true (request)
-	w.Bool(false)
-
-	// Write "gameSave" block with default save data
-	w.StartBlock("gameSave", false)
-	if defaultSave != nil {
-		w.blockBuf.Raw(defaultSave)
-	}
-	w.EndBlock()
-
-	return w.Packet(TypeSync)
-}
-
-// EncodeSyncSendSave generates a SYNC (type 35) packet distributing a save to all clients.
-func EncodeSyncSendSave(step int32, saveData []byte) Packet {
-	w := NewWriter()
-	w.Byte(0)
-	w.Int32(step)
-	w.Int32(step / 10)
-	w.Float32(1.0)
-	w.Float32(1.0)
-	w.Bool(false) // isPullSave = false (distribute)
-	w.Bool(false)
-
-	// Write "gameSave" block with actual save data
-	w.StartBlock("gameSave", false)
-	if saveData != nil {
-		w.blockBuf.Raw(saveData)
-	}
-	w.EndBlock()
-
-	return w.Packet(TypeSync)
-}
-
-// DecodeSyncSave parses a SYNC (type 35) response from a client to extract the save data.
-func DecodeSyncSave(body []byte) (step int32, saveData []byte, err error) {
-	r := NewReader(body)
-
-	// byte (discard)
-	if _, err = r.Byte(); err != nil {
-		return 0, nil, err
-	}
-	// frame
-	if step, err = r.Int32(); err != nil {
-		return 0, nil, err
-	}
-	// time (discard)
-	if _, err = r.Int32(); err != nil {
-		return 0, nil, err
-	}
-	// float (discard)
-	if _, err = r.Float32(); err != nil {
-		return 0, nil, err
-	}
-	// float (discard)
-	if _, err = r.Float32(); err != nil {
-		return 0, nil, err
-	}
-	// bool isPullSave (discard)
-	if _, err = r.Bool(); err != nil {
-		return 0, nil, err
-	}
-	// bool (discard)
-	if _, err = r.Bool(); err != nil {
-		return 0, nil, err
-	}
-
-	// Read "gameSave" block
-	blockName, err := r.String()
-	if err != nil {
-		return step, nil, nil // No block, return step only
-	}
-	blockLen, err := r.Int32()
-	if err != nil {
-		return step, nil, nil
-	}
-	if r.off+int(blockLen) > len(r.data) {
-		return step, nil, nil
-	}
-	saveData = r.data[r.off : r.off+int(blockLen)]
-
-	// Try to decompress if it's gzip
-	if blockName == "gameSave" && len(saveData) > 2 {
-		decompressed, derr := gunzipBytes(saveData)
-		if derr == nil {
-			saveData = decompressed
-		}
-	}
-
-	return step, saveData, nil
-}
-
-// EncodeDisconnect generates the DISCONNECT (type 111) packet.
-func EncodeDisconnect() Packet {
-	w := NewWriter()
-	return w.Packet(TypeDisconnect)
-}
-
-// EncodeRelayVersionInfo generates the RELAY_VERSION_INFO (type 163) packet.
-func EncodeRelayVersionInfo(version int32) Packet {
-	w := NewWriter()
-	w.Byte(0)
-	w.Int32(version)
-	w.Int32(1)
-	w.Bool(false)
-	return w.Packet(TypeRelayVersionInfo)
-}
-
-func javaHash(s string) int32 {
-	var h int32
-	for _, r := range s {
-		h = 31*h + int32(r)
-	}
-	return h
 }

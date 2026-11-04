@@ -251,13 +251,6 @@ func (c *Client) FetchInternalKey() error {
 	return nil
 }
 
-// InternalKey returns the currently stored internal key.
-func (c *Client) InternalKey() string {
-	c.internalKeyMu.RLock()
-	defer c.internalKeyMu.RUnlock()
-	return c.internalKey
-}
-
 // ValidateInternalKey checks if the given key matches the stored internal key.
 // Returns true if valid, false otherwise. Always returns false if no key is set.
 func (c *Client) ValidateInternalKey(key string) bool {

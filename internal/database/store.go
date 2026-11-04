@@ -9,10 +9,6 @@ type Store interface {
 	// Returns nil, nil if not found.
 	GetBindingByGameUUID(gameUUID string) (*PlayerBinding, error)
 
-	// GetBindingByPlayerName looks up a player binding by player name.
-	// Returns nil, nil if not found.
-	GetBindingByPlayerName(playerName string) (*PlayerBinding, error)
-
 	// GetBindingsByHAUUID returns all bindings linked to the given HA user UUID.
 	// Returns an empty slice (not nil) if none found.
 	GetBindingsByHAUUID(haUserUUID string) ([]PlayerBinding, error)
@@ -22,12 +18,6 @@ type Store interface {
 
 	// ClaimBinding marks a proxy binding as claimed (CBH=1) and links it to an HA user.
 	ClaimBinding(gameUUID, haUserUUID string) error
-
-	// UpdateBindingHAUUID updates the HA user UUID for an existing binding.
-	UpdateBindingHAUUID(gameUUID, haUserUUID string) error
-
-	// SetQuickAuth updates the quick_auth setting for a player binding.
-	SetQuickAuth(gameUUID string, enabled bool) error
 
 	// GetLang returns the language preference for a player binding.
 	// Returns "en" if not found.

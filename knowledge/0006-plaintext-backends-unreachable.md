@@ -136,14 +136,10 @@ Benefits:
   `tls_mode: auto` → `transport=plain`; Preregister(160)→161, RegisterPlayer
   → bound, real game to settlement). The fake client receives the engine's
   unit-checksum KICK(150), expected anti-cheat behavior (DECISIONS D-16).
-  The plaintext variant test lived in a throwaway Go-Server copy and is not
-  committed to either repository; reproduce with: copy RW-HPS so that
-  `Go-Server/internal/net/gateway` is 4 levels below the tree root, symlink
-  `Helper` and `data` next to `Go-Server`, add a clone of
-  `cascade_e2e_test.go` whose gateway config omits `TLSCert`/`TLSKey` and
-  whose Cascade config uses `http://` control URL + `trust_mode: open`,
-  then `RWHPS_CASCADE_SRC=<cascade checkout> go test ./internal/net/gateway/
-  -run TestCascadePlainTransportE2E`.
+  The plaintext variant test belongs to the RW-HPS repository and is parked
+  here in committable form: see
+  [appendix-plain-transport-e2e.md](appendix-plain-transport-e2e.md) for the
+  full source, layout, and reproduction steps.
 - RW-HPS Go Server: `internal/net/gateway/trust.go` (trust tiers; `""` ≡
   `open`), `internal/net/gateway/gateway.go:125-153` (server TLS only when
   certificates are configured), `internal/app/cascade.go:26-88` (gateway

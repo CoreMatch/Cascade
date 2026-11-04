@@ -26,7 +26,7 @@ directory.
   `{name, ttl_seconds, security_level: 0}`, then relay rules, an internal
   key refresh, and the embedded SDK package upload
   (`internal/app/app.go:113-124,149-178`;
-  `internal/auth/client.go:310-317,321-342`).
+  `internal/auth/client.go:303-310,314-335`).
 - A renewal loop re-posts the same presence record at **half the TTL**
   (`internal/app/presence.go:25-30,46-67`), so a renewal lands well before
   the record expires and one missed renewal is tolerable. Failed renewals
@@ -35,7 +35,7 @@ directory.
 - `ttl_seconds <= 0` declares a never-expiring record per the HRPAuth
   contract and disables the loop (`presence.go:25-28`; HA-Contract
   `hrpauth-business.yaml`, `PresenceRequest.ttl_seconds`). The default TTL
-  is 120 s (`internal/config/config.go:194`), configurable via
+  is 120 s (`internal/config/config.go:167`), configurable via
   `presence_ttl_sec` / `RWGIN_PRESENCE_TTL_SEC`.
 - **There is no deregistration.** The HRPAuth contract exposes only
   `POST /services/presence` (register or heartbeat); no deregister endpoint
@@ -51,7 +51,7 @@ directory.
   (`paths.go:38-45`). This applies to:
   - `config.yaml` — an existing file is read from either location; a
     brand-new file is always created in the working directory
-    (`internal/config/config.go:128-137`).
+    (`internal/config/config.go:117-155`).
   - the SQLite `db_path` — an existing database found next to the
     executable wins over creating a fresh one in the cwd
     (`internal/app/app.go:44-57`).
@@ -109,11 +109,11 @@ illustrative example, not a prescribed value.
 - `internal/app/presence.go:12-14` (backoff bounds), `:25-30` (half-TTL
   interval; `<=0` disables), `:33-39` (backoff doubling), `:41-67` (loop;
   comment documenting the missing deregister endpoint).
-- `internal/auth/client.go:310-317` (`RegisterPresence` body incl.
-  `ttl_seconds`, `security_level: 0`), `:321-342` (`RegisterRelay`).
+- `internal/auth/client.go:303-310` (`RegisterPresence` body incl.
+  `ttl_seconds`, `security_level: 0`), `:314-335` (`RegisterRelay`).
 - `internal/paths/paths.go:24-33` (`Candidates`: cwd then executable dir),
   `:38-45` (`FirstExisting`).
-- `internal/config/config.go:128-137` (config lookup/creation), `:194`
+- `internal/config/config.go:117-155` (config lookup/creation), `:167`
   (`PresenceTTLSec` default 120).
 - `internal/database/migrate.go:20-23` (`ErrMigrationsDirNotFound`),
   `:51-58` (resolution + fatal on missing), `:87-97` (per-db-type

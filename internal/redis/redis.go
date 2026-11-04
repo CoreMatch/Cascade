@@ -59,13 +59,6 @@ func (c *Client) IsAuthenticated(gameUUID string) (string, bool) {
 	return val, true
 }
 
-// ClearAuthenticated removes the authentication state for a game_uuid.
-func (c *Client) ClearAuthenticated(gameUUID string) error {
-	ctx := context.Background()
-	key := c.prefix + "auth:" + gameUUID
-	return c.rdb.Del(ctx, key).Err()
-}
-
 // SetQuickAuth marks a game_uuid for quick reconnection auth with a short TTL.
 func (c *Client) SetQuickAuth(gameUUID, haUserUUID string, ttl time.Duration) error {
 	ctx := context.Background()
