@@ -23,29 +23,30 @@ The chain, per connection:
    it (contract, "Game TCP preamble" / "Session state machine").
 2. **Intercept `RegisterPlayer`.** When the client sends
    `RegisterPlayer` (type 110), the proxy decodes the player name and game
-   UUID (`internal/proxy/session.go:120-129`,
-   `internal/protocol/codec.go:183-200`) and records a proxy binding row
-   (`session.go:131-138`).
+   UUID (`internal/proxy/session.go::bindRegisteredPlayer`,
+   `internal/protocol/codec.go::DecodeRegister`) and records a proxy
+   binding row (`internal/proxy/session.go::bindRegisteredPlayer`).
 3. **Sign a one-time Ed25519 JWT.** The proxy signs a compact JWS with
    `alg: EdDSA`, `kid` from configuration, and claims `iss` (configured
    issuer), `aud` (exact backend ID), `sid` (session ID), `sub` (game
    UUID), `iat`, `exp` = iat + 30 s, and a cryptographically random 16-byte
-   `jti` (`internal/proxy/token.go:62-82`). The private key must be
+   `jti` (`internal/proxy/token.go::Sign`). The private key must be
    Ed25519 in PKCS#8 PEM and its file permissions must not allow group or
-   other access (`token.go:32-60`).
+   other access (`internal/proxy/token.go::loadSigner`).
 4. **Bind before forwarding.** The proxy calls
    `PUT /v1/sessions/{sessionID}/identity` with `{"token": ...}`
-   (`internal/backend/client.go:218-221`) and only after that succeeds does
-   it forward the client's `RegisterPlayer` to the backend
-   (`session.go:77-95`). The bind call is bounded by
-   `pending_session_timeout_sec` (default 5 s)
-   (`session.go:144-148`, `internal/config/config.go:177`).
+   (`internal/backend/client.go::BindIdentity`) and only after that succeeds
+   does it forward the client's `RegisterPlayer` to the backend
+   (`internal/proxy/session.go::clientToBackend`). The bind call is bounded
+   by `pending_session_timeout_sec` (default 5 s)
+   (`internal/proxy/session.go::bindRegisteredPlayer`,
+   `internal/config/config.go (field: pending_session_timeout_sec)`).
 5. **Hard gates both directions.** Client game data before a successful
-   bind closes the session (`session.go:87-89`); backend game data before
-   the bind is rejected except the `Preregister` answer
-   (`session.go:108-110`). Covered by
+   bind closes the session (`internal/proxy/session.go::clientToBackend`);
+   backend game data before the bind is rejected except the `Preregister`
+   answer (`internal/proxy/session.go::backendToClient`). Covered by
    `TestProxyBindsRegisteredIdentityBeforeForwarding`
-   (`internal/proxy/session_integration_test.go:30`).
+   (`internal/proxy/session_integration_test.go::TestProxyBindsRegisteredIdentityBeforeForwarding`).
 
 Contract-side obligations (HA-Contract `Cascade-Backend-v1.md`):
 
@@ -82,9 +83,9 @@ Costs and limitations:
   replayed; a fresh token is signed per session, per bind.
 - HA-side state (chat-command `/login`, `/claim`, cached auth state in
   Redis) is deliberately **not** in the JWT; it stays proxy-local
-  (`session.go:182-346`). The backend learns only the game UUID — by
-  contract design, so identity transport and authorization policy stay
-  separate.
+  (`internal/proxy/session.go::handleAuthChat`). The backend learns only
+  the game UUID — by contract design, so identity transport and
+  authorization policy stay separate.
 
 Benefits:
 
@@ -92,22 +93,26 @@ Benefits:
   whose game UUID was not vouched for by the proxy on that exact session.
 - Bind failures are logged without material: only session ID, backend ID,
   and an error summary; never the JWT or key material
-  (`session.go:155-168`, added in commit `df0feb3`).
+  (`internal/proxy/session.go::logBindFailure`, added in commit `df0feb3`).
 
 ## Evidence
 
-- `internal/proxy/session.go:77-95` (client→backend gate + bind),
-  `:108-110` (backend→client gate), `:120-150` (`bindRegisteredPlayer`),
-  `:144-148` (bind timeout from `pending_session_timeout_sec`),
-  `:155-168` (redacted failure logging).
-- `internal/proxy/token.go:32-60` (key loading: Ed25519 PKCS#8, permission
-  check), `:62-82` (claims incl. `exp` = +30 s, random `jti`).
-- `internal/backend/client.go:218-221` — `BindIdentity` issues
+- `internal/proxy/session.go::clientToBackend` (client→backend gate +
+  bind), `internal/proxy/session.go::backendToClient` (backend→client
+  gate), `internal/proxy/session.go::bindRegisteredPlayer` (bind, incl.
+  bind timeout from `pending_session_timeout_sec`),
+  `internal/proxy/session.go::logBindFailure` (redacted failure logging).
+- `internal/proxy/token.go::loadSigner` (key loading: Ed25519 PKCS#8,
+  permission check), `internal/proxy/token.go::Sign` (claims incl. `exp`
+  = +30 s, random `jti`).
+- `internal/backend/client.go::BindIdentity` — issues
   `PUT /v1/sessions/{sessionID}/identity`.
-- `internal/protocol/types.go:7` — `TypeRegisterPlayer = 110`.
-- `internal/protocol/codec.go:183-200` — `DecodeRegister`.
-- `internal/proxy/session_integration_test.go:30` — end-to-end test that
-  identity is bound before forwarding, against an mTLS fake backend.
+- `internal/protocol/types.go::TypeRegisterPlayer` —
+  `TypeRegisterPlayer = 110`.
+- `internal/protocol/codec.go::DecodeRegister`.
+- `internal/proxy/session_integration_test.go::TestProxyBindsRegisteredIdentityBeforeForwarding`
+  — end-to-end test that identity is bound before forwarding, against an
+  mTLS fake backend.
 - HA-Contract repository, `docs/dev/Cascade/Cascade-Backend-v1.md`:
   "Session state machine", "Identity JWT", "HTTP API" (idempotency and
   conflict rules), "Errors and retries" (stable codes incl.
