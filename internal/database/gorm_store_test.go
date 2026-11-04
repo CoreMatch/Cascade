@@ -195,6 +195,55 @@ func TestCleanupStaleProxyBindings(t *testing.T) {
 	}
 }
 
+// TestCleanupStaleProxyBindingsExpiryBoundary pins the expiry boundary with
+// an injected cutoff: the predicate is a strict "last_login < cutoff", so a
+// binding exactly at the cutoff survives, one second older is deleted, and
+// one second newer survives.
+func TestCleanupStaleProxyBindingsExpiryBoundary(t *testing.T) {
+	store := migratedTestStore(t)
+
+	cutoff := time.Now().UTC().AddDate(0, 0, -30).Truncate(time.Second)
+	rows := []struct {
+		gameUUID string
+		login    time.Time
+		deletes  bool
+	}{
+		{"exactly-at-cutoff", cutoff, false},
+		{"one-second-older", cutoff.Add(-time.Second), true},
+		{"one-second-newer", cutoff.Add(time.Second), false},
+	}
+	for _, row := range rows {
+		if err := store.CreateProxyBinding(row.gameUUID, "player"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.db.Model(&PlayerBinding{}).
+			Where("game_uuid = ?", row.gameUUID).
+			Update("last_login", row.login).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	removed, err := store.cleanupStaleBefore(cutoff)
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("cleanup removed %d bindings, want exactly 1 (only the one strictly older than the cutoff)", removed)
+	}
+	for _, row := range rows {
+		binding, err := store.GetBindingByGameUUID(row.gameUUID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row.deletes && binding != nil {
+			t.Fatalf("%s (last_login %s) survived cleanup, want deleted", row.gameUUID, row.login.Format(time.RFC3339))
+		}
+		if !row.deletes && binding == nil {
+			t.Fatalf("%s (last_login %s) was deleted; the boundary must be strict <", row.gameUUID, row.login.Format(time.RFC3339))
+		}
+	}
+}
+
 // TestConcurrentBindingFlows stresses the binding table with many
 // simultaneous create/claim/read/lang flows plus a single shared UUID
 // hammered by concurrent upserts. Run with -race: it guards the store's

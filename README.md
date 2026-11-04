@@ -49,6 +49,8 @@ go run ./cmd/cascade
 - `GET /api/rooms` 及原有 `/api/rooms` 管理路径：代理门面，操作转发给房间所属后端。
 - 原有 `/api/auth/*` 与 `/internal/*` 接口继续由代理处理。
 
+管理面的全部错误响应使用统一信封 `{"success":false,"code":...,"message":...,"meta":{"request_id":...}}`：`code` 为 HA-Contract `docs/api/error-codes.md` 登记的 `lower_snake` 稳定码（如 `cascade_room_conflict`、`cascade_binding_not_found`），后端契约的 `UPPER_SNAKE` 稳定码（`FORBIDDEN`、`SESSION_NOT_FOUND`、`ROOM_CONFLICT` 等）连同状态码与消息原样透传。成功响应形状不变。
+
 ## 验证范围
 
 仓内测试覆盖配置迁移、OpenAPI YAML 解析、路由目录、按信任档推导的明文与 mTLS 控制/游戏传输、JWT 身份绑定和 RW 帧转发。它们不等同于真实客户端兼容验收。正式切换前仍需使用独立后端和真实 Rusted Warfare 客户端完成握手、入房及一局游戏，并在维护窗口切换。

@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,14 +25,20 @@ type ProxyService interface {
 // ProxyRouter exposes the existing management surface as a backend facade.
 func ProxyRouter(server ProxyService, authClient *auth.Client, db database.Store) *gin.Engine {
 	engine := gin.New()
-	engine.Use(gin.Logger(), gin.Recovery())
+	engine.Use(gin.Logger(), gin.CustomRecoveryWithWriter(os.Stderr, func(c *gin.Context, recovered any) {
+		fmt.Fprintf(os.Stderr, "[recovery] panic recovered: %v\n", recovered)
+		writeError(c, http.StatusInternalServerError, codeInternalError, "internal error")
+	}))
+	engine.NoRoute(func(c *gin.Context) {
+		writeError(c, http.StatusNotFound, codeRouteNotFound, "no registered route matched the request")
+	})
 
 	engine.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	engine.GET("/readyz", func(c *gin.Context) {
 		if !server.Ready() {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
+			writeError(c, http.StatusServiceUnavailable, codeCascadeBackendUnavailable, "no healthy backend available")
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
@@ -51,7 +59,7 @@ func ProxyRouter(server ProxyService, authClient *auth.Client, db database.Store
 	engine.POST("/api/rooms", func(c *gin.Context) {
 		var req roomCreateRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadRequest, codeInvalidJSONBody, err.Error())
 			return
 		}
 		raw, status, err := server.CreateRoom(c.Request.Context(), req.Code, req)
@@ -68,7 +76,7 @@ func ProxyRouter(server ProxyService, authClient *auth.Client, db database.Store
 	engine.PUT("/api/rooms/:code/settings", func(c *gin.Context) {
 		var req roomSettingsRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadRequest, codeInvalidJSONBody, err.Error())
 			return
 		}
 		forwardRoom(c, server, http.MethodPut, c.Param("code"), "/settings", req)
@@ -76,7 +84,7 @@ func ProxyRouter(server ProxyService, authClient *auth.Client, db database.Store
 	engine.POST("/api/rooms/:code/kick", func(c *gin.Context) {
 		var req playerActionRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadRequest, codeInvalidJSONBody, err.Error())
 			return
 		}
 		raw, status, err := server.RoomRequest(c.Request.Context(), http.MethodPost, c.Param("code"), "/kick", req)
@@ -89,7 +97,7 @@ func ProxyRouter(server ProxyService, authClient *auth.Client, db database.Store
 	engine.POST("/api/rooms/:code/ban", func(c *gin.Context) {
 		var req playerActionRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadRequest, codeInvalidJSONBody, err.Error())
 			return
 		}
 		raw, status, err := server.RoomRequest(c.Request.Context(), http.MethodPost, c.Param("code"), "/ban", req)
@@ -116,18 +124,24 @@ func forwardRoom(c *gin.Context, server ProxyService, method, code, suffix strin
 func writeForwarded(c *gin.Context, raw []byte, status int, err error, successStatus int) {
 	if err != nil {
 		if errors.Is(err, backend.ErrRoomConflict) {
-			c.JSON(http.StatusConflict, gin.H{"error": "ROOM_CONFLICT"})
+			writeError(c, http.StatusConflict, codeCascadeRoomConflict, err.Error())
 			return
 		}
 		if errors.Is(err, backend.ErrBackendDown) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "BACKEND_NOT_READY"})
+			writeError(c, http.StatusServiceUnavailable, codeCascadeBackendUnavailable, err.Error())
 			return
 		}
 		if apiErr, ok := errors.AsType[*backend.APIError](err); ok {
-			c.JSON(apiErr.Status, gin.H{"error": apiErr.Code})
+			// Backend contract codes (FORBIDDEN, SESSION_NOT_FOUND, ...) are
+			// forwarded verbatim with the backend's own message.
+			message := apiErr.Message
+			if message == "" {
+				message = apiErr.Code
+			}
+			writeError(c, apiErr.Status, apiErr.Code, message)
 			return
 		}
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "BACKEND_UNAVAILABLE"})
+		writeError(c, http.StatusServiceUnavailable, codeCascadeBackendUnavailable, err.Error())
 		return
 	}
 	if status == http.StatusNoContent {
@@ -154,16 +168,16 @@ func registerAccountRoutes(engine *gin.Engine, authClient *auth.Client, db datab
 			Password   string `json:"password" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadRequest, codeInvalidJSONBody, err.Error())
 			return
 		}
 		user, err := authClient.VerifyCredentials(req.Identifier, req.Password)
 		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadGateway, codeInternalError, err.Error())
 			return
 		}
 		if user == nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			writeError(c, http.StatusUnauthorized, codeInvalidCredentials, "invalid credentials")
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"uuid": user.UUID, "email": user.Email, "username": user.Username})
@@ -174,31 +188,35 @@ func registerAccountRoutes(engine *gin.Engine, authClient *auth.Client, db datab
 			HAUserUUID string `json:"haUserUUID" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadRequest, codeInvalidJSONBody, err.Error())
 			return
 		}
 		if db == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+			writeError(c, http.StatusInternalServerError, codeCascadeDatabaseNotConfigured, "player-binding database is not configured")
 			return
 		}
 		if err := db.ClaimBinding(req.GameUUID, req.HAUserUUID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			if errors.Is(err, database.ErrBindingNotFound) {
+				writeError(c, http.StatusNotFound, codeCascadeBindingNotFound, err.Error())
+				return
+			}
+			writeError(c, http.StatusInternalServerError, codeInternalError, err.Error())
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true})
 	})
 	engine.GET("/api/auth/status/:gameUUID", func(c *gin.Context) {
 		if db == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+			writeError(c, http.StatusInternalServerError, codeCascadeDatabaseNotConfigured, "player-binding database is not configured")
 			return
 		}
 		binding, err := db.GetBindingByGameUUID(c.Param("gameUUID"))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			writeError(c, http.StatusInternalServerError, codeInternalError, err.Error())
 			return
 		}
 		if binding == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "binding not found"})
+			writeError(c, http.StatusNotFound, codeCascadeBindingNotFound, "no player binding exists for the given game UUID")
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
@@ -209,12 +227,12 @@ func registerAccountRoutes(engine *gin.Engine, authClient *auth.Client, db datab
 	})
 	engine.GET("/api/auth/bindings/:haUserUUID", func(c *gin.Context) {
 		if db == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+			writeError(c, http.StatusInternalServerError, codeCascadeDatabaseNotConfigured, "player-binding database is not configured")
 			return
 		}
 		bindings, err := db.GetBindingsByHAUUID(c.Param("haUserUUID"))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			writeError(c, http.StatusInternalServerError, codeInternalError, err.Error())
 			return
 		}
 		type bindingJSON struct {
@@ -241,7 +259,8 @@ func registerInternalRoutes(engine *gin.Engine, authClient *auth.Client, db data
 	internal := engine.Group("/internal")
 	internal.Use(func(c *gin.Context) {
 		if authClient == nil || !authClient.ValidateInternalKey(c.GetHeader("X-Internal-Key")) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid internal key"})
+			writeError(c, http.StatusUnauthorized, codeCascadeInvalidInternalKey, "X-Internal-Key is missing or does not match the key issued by HRPAuth Core")
+			c.Abort()
 			return
 		}
 		c.Next()
@@ -251,7 +270,7 @@ func registerInternalRoutes(engine *gin.Engine, authClient *auth.Client, db data
 	})
 	internal.POST("/proxy-register", func(c *gin.Context) {
 		if db == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "database not configured"})
+			writeError(c, http.StatusInternalServerError, codeCascadeDatabaseNotConfigured, "player-binding database is not configured")
 			return
 		}
 		var req struct {
@@ -259,11 +278,11 @@ func registerInternalRoutes(engine *gin.Engine, authClient *auth.Client, db data
 			PlayerName string `json:"playerName" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			writeError(c, http.StatusBadRequest, codeInvalidJSONBody, err.Error())
 			return
 		}
 		if err := db.CreateProxyBinding(req.GameUUID, req.PlayerName); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			writeError(c, http.StatusInternalServerError, codeInternalError, err.Error())
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true})

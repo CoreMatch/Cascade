@@ -16,7 +16,9 @@ type Store interface {
 	// CreateProxyBinding creates or updates a proxy binding (CBH=0) for a guest player.
 	CreateProxyBinding(gameUUID, playerName string) error
 
-	// ClaimBinding marks a proxy binding as claimed (CBH=1) and links it to an HA user.
+	// ClaimBinding marks a proxy binding as claimed (CBH=1) and links it to
+	// an HA user. It wraps ErrBindingNotFound when no unclaimed binding
+	// exists for the game UUID.
 	ClaimBinding(gameUUID, haUserUUID string) error
 
 	// GetLang returns the language preference for a player binding.
@@ -26,7 +28,9 @@ type Store interface {
 	// SetLang updates the language preference for a player binding.
 	SetLang(gameUUID, lang string) error
 
-	// CleanupStaleProxyBindings deletes proxy bindings (CBH=0) that haven't logged in for 30 days.
+	// CleanupStaleProxyBindings deletes proxy bindings (CBH=0) whose
+	// last_login is strictly older than 30 days (last_login < now-30d; a
+	// binding exactly at the cutoff survives).
 	CleanupStaleProxyBindings() (int64, error)
 
 	// Close closes the underlying database connection.

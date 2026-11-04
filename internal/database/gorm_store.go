@@ -12,6 +12,11 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
+// ErrBindingNotFound reports that no player binding exists for the lookup
+// key. ClaimBinding returns it when the target binding is absent or already
+// claimed, so the API layer can map the failure to a 404.
+var ErrBindingNotFound = errors.New("no unclaimed player binding found")
+
 // GORMStore implements the Store interface using GORM.
 type GORMStore struct {
 	db     *gorm.DB
@@ -156,10 +161,13 @@ func (s *GORMStore) ClaimBinding(gameUUID, haUserUUID string) error {
 			"last_login":   now,
 		})
 
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("no unclaimed binding found for game_uuid: %s", gameUUID)
+	if result.Error != nil {
+		return result.Error
 	}
-	return result.Error
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("game_uuid %s: %w", gameUUID, ErrBindingNotFound)
+	}
+	return nil
 }
 
 // GetLang returns the language preference for a player binding.
@@ -186,9 +194,17 @@ func (s *GORMStore) SetLang(gameUUID, lang string) error {
 	return result.Error
 }
 
-// CleanupStaleProxyBindings deletes proxy bindings (CBH=0) that haven't logged in for 30 days.
+// CleanupStaleProxyBindings deletes proxy bindings (CBH=0) that haven't
+// logged in for 30 days. The expiry boundary is strict: a binding is deleted
+// only when last_login < now-30d, so a binding whose last_login equals the
+// cutoff exactly is kept for one more period.
 func (s *GORMStore) CleanupStaleProxyBindings() (int64, error) {
-	cutoff := time.Now().AddDate(0, 0, -30)
+	return s.cleanupStaleBefore(time.Now().AddDate(0, 0, -30))
+}
+
+// cleanupStaleBefore deletes unclaimed bindings whose last_login is strictly
+// before cutoff. Tests inject an exact cutoff to pin the boundary semantics.
+func (s *GORMStore) cleanupStaleBefore(cutoff time.Time) (int64, error) {
 	result := s.db.Where("cbh = 0 AND last_login < ?", cutoff).Delete(&PlayerBinding{})
 	return result.RowsAffected, result.Error
 }

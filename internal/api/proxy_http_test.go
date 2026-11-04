@@ -26,6 +26,7 @@ type fakeProxyService struct {
 	roomBody   any
 	roomStatus int
 	roomRaw    []byte
+	roomErr    error
 }
 
 func (f *fakeProxyService) Ready() bool                       { return f.ready }
@@ -34,11 +35,17 @@ func (f *fakeProxyService) BackendStatuses() []backend.Status { return f.statuse
 
 func (f *fakeProxyService) CreateRoom(_ context.Context, code string, body any) ([]byte, int, error) {
 	f.createCode, f.createBody = code, body
+	if f.roomErr != nil {
+		return nil, 0, f.roomErr
+	}
 	return []byte(`{"code":"` + code + `"}`), http.StatusCreated, nil
 }
 
 func (f *fakeProxyService) RoomRequest(_ context.Context, method, code, suffix string, body any) ([]byte, int, error) {
 	f.method, f.roomCode, f.roomSuffix, f.roomBody = method, code, suffix, body
+	if f.roomErr != nil {
+		return nil, 0, f.roomErr
+	}
 	return f.roomRaw, f.roomStatus, nil
 }
 
@@ -120,9 +127,7 @@ func TestProxyRouterProbes(t *testing.T) {
 
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if response.Code != http.StatusServiceUnavailable || strings.TrimSpace(response.Body.String()) != `{"status":"not_ready"}` {
-		t.Fatalf("readyz (not ready) response = %d %s", response.Code, response.Body.String())
-	}
+	assertErrorEnvelope(t, response, http.StatusServiceUnavailable, codeCascadeBackendUnavailable)
 
 	service.ready = true
 	response = httptest.NewRecorder()
@@ -163,12 +168,7 @@ func TestInternalRoutesRequireInternalKey(t *testing.T) {
 		req.Header.Set("X-Internal-Key", "anything")
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
-		if response.Code != http.StatusUnauthorized {
-			t.Fatalf("%s %s status = %d, want 401", req.Method, req.URL.Path, response.Code)
-		}
-		if !strings.Contains(response.Body.String(), "invalid internal key") {
-			t.Fatalf("%s %s body = %s", req.Method, req.URL.Path, response.Body.String())
-		}
+		assertErrorEnvelope(t, response, http.StatusUnauthorized, codeCascadeInvalidInternalKey)
 	}
 }
 
