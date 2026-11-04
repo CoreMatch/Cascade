@@ -88,8 +88,8 @@ constitute a rationale for keeping the package.
   `cascade/internal/game` returns no imports (verified 2026-11-04).
 - `internal/game/map.go:7` — sole repository import of
   `github.com/lafriks/go-tiled`; dependency listed in `go.mod`.
-- `internal/config/config.go:32-41` (Config fields), `:79-88` (YAML tags),
-  `:180-189` (defaults) — legacy fields; repository-wide search confirms no
+- `internal/config/config.go:37-46` (Config fields), `:84-93` (YAML tags),
+  `:185-194` (defaults) — legacy fields; repository-wide search confirms no
   consumer outside `internal/config/config.go` (verified 2026-11-04).
 - Author confirmation (2026-11-04): `internal/game/*` and the legacy config
   fields are leftovers never cleaned up after the pivot, not an intentional
