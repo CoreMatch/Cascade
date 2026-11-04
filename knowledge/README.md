@@ -44,7 +44,7 @@ Each entry is one page in ADR style:
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
-| [0001](0001-edge-proxy-not-game-server.md) | Edge Proxy, Not a Game Server | accepted | 2026-11-04 |
+| [0001](0001-edge-proxy-not-game-server.md) | Edge Proxy, Not a Game Server | accepted (leftover dead code deleted 2026-11-05) | 2026-11-04 |
 | [0002](0002-room-code-routing.md) | Room-Code Routing: Snapshot, Prefix, Default | accepted | 2026-11-04 |
 | [0003](0003-identity-binding-chain.md) | Identity Binding Chain: Ed25519 JWT Before Game Data | accepted | 2026-11-04 |
 | [0004](0004-mtls-casc-preamble-transport.md) | mTLS + 24-Byte CASC Preamble + Byte Passthrough | accepted (transport part superseded by 0006) | 2026-11-04 |
