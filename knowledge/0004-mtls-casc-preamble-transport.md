@@ -60,8 +60,10 @@ configuration. Startup refused to start without all three material paths.
 
 **Interplay with the backend trust strategies.** The proxy unconditionally
 presents its client certificate and signs identity JWTs regardless of which
-strategy the backend runs; the strategies differ only in what the backend
-checks (contract, "Backend trust strategies"):
+strategy the backend runs _(since 0006, 2026-11-05, the client certificate
+is presented only toward backends resolved to mTLS; plaintext backends
+receive none. JWT signing is still unconditional.)_; the strategies differ
+only in what the backend checks (contract, "Backend trust strategies"):
 
 - `open` — backend checks neither certificate nor JWT signature; structural
   claim checks and the one-time `jti` ledger still apply.
