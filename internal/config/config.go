@@ -51,6 +51,7 @@ type Config struct {
 	HRPAuthClientSecret      string // OAuth2 client_secret
 	HRPAuthServiceName       string // Service name for Core /services/auth-key registration
 	HRPAuthRelayPrefix       string // Relay path prefix for Core gateway (e.g. /rusted-warfare)
+	PresenceTTLSec           int    // Presence record TTL in seconds; renewed at half this interval, <=0 disables renewal (record never expires)
 	HeartbeatIntervalSec     int
 	RegisterTimeoutSec       int
 	ReadTimeoutSec           int
@@ -97,6 +98,7 @@ type fileConfig struct {
 	HRPAuthClientSecret      string          `yaml:"hrpauth_client_secret"`
 	HRPAuthServiceName       string          `yaml:"hrpauth_service_name"`
 	HRPAuthRelayPrefix       string          `yaml:"hrpauth_relay_prefix"`
+	PresenceTTLSec           int             `yaml:"presence_ttl_sec"`
 	HeartbeatIntervalSec     int             `yaml:"heartbeat_interval_sec"`
 	RegisterTimeoutSec       int             `yaml:"register_timeout_sec"`
 	ReadTimeoutSec           int             `yaml:"read_timeout_sec"`
@@ -189,6 +191,7 @@ func defaultFileConfig() fileConfig {
 		DBPath:                   "data/cascade.db",
 		HRPAuthServiceName:       "Cascade",
 		HRPAuthRelayPrefix:       "/rusted-warfare",
+		PresenceTTLSec:           120,
 		HeartbeatIntervalSec:     2,
 		RegisterTimeoutSec:       5,
 		ReadTimeoutSec:           90,
@@ -308,6 +311,7 @@ func fileConfigToConfig(fc fileConfig) Config {
 		HRPAuthClientSecret:      fc.HRPAuthClientSecret,
 		HRPAuthServiceName:       fc.HRPAuthServiceName,
 		HRPAuthRelayPrefix:       fc.HRPAuthRelayPrefix,
+		PresenceTTLSec:           fc.PresenceTTLSec,
 		HeartbeatIntervalSec:     fc.HeartbeatIntervalSec,
 		RegisterTimeoutSec:       fc.RegisterTimeoutSec,
 		ReadTimeoutSec:           fc.ReadTimeoutSec,
@@ -383,6 +387,9 @@ func fileConfigToConfig(fc fileConfig) Config {
 	}
 	if cfg.ChatRateLimit == 0 {
 		cfg.ChatRateLimit = d.ChatRateLimit
+	}
+	if cfg.PresenceTTLSec == 0 {
+		cfg.PresenceTTLSec = d.PresenceTTLSec
 	}
 	if cfg.ProxyIssuer == "" {
 		cfg.ProxyIssuer = d.ProxyIssuer
@@ -464,6 +471,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnv("RWGIN_HRPAUTH_RELAY_PREFIX"); ok {
 		cfg.HRPAuthRelayPrefix = v
+	}
+	if v, ok := lookupEnvInt("RWGIN_PRESENCE_TTL_SEC"); ok {
+		cfg.PresenceTTLSec = v
 	}
 	if v, ok := lookupEnvInt("RWGIN_HEARTBEAT_SEC"); ok {
 		cfg.HeartbeatIntervalSec = v
