@@ -104,3 +104,83 @@ func TestProxyRouterForwardsRoomOperationsAndKeepsLegacyDeleteResponse(t *testin
 		t.Fatalf("room detail request was not forwarded: %+v", service)
 	}
 }
+
+// TestProxyRouterProbes covers the /healthz and /readyz probes
+// (contract cascade-proxy.yaml).
+func TestProxyRouterProbes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeProxyService{ready: false}
+	router := ProxyRouter(service, nil, nil)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != `{"status":"ok"}` {
+		t.Fatalf("healthz response = %d %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusServiceUnavailable || strings.TrimSpace(response.Body.String()) != `{"status":"not_ready"}` {
+		t.Fatalf("readyz (not ready) response = %d %s", response.Code, response.Body.String())
+	}
+
+	service.ready = true
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != `{"status":"ready"}` {
+		t.Fatalf("readyz (ready) response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+// TestProxyRouterBackends covers GET /api/backends.
+func TestProxyRouterBackends(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeProxyService{statuses: []backend.Status{{ID: "backend-a", ControlURL: "http://127.0.0.1:8080"}}}
+	router := ProxyRouter(service, nil, nil)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/backends", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"backends"`) {
+		t.Fatalf("missing backends key: %s", response.Body.String())
+	}
+}
+
+// TestInternalRoutesRequireInternalKey covers the fail-closed gate of the
+// /internal group when no auth client (and therefore no internal key) is
+// configured: both routes must reject with 401.
+func TestInternalRoutesRequireInternalKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := ProxyRouter(&fakeProxyService{}, nil, nil)
+
+	for _, req := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/internal/heartbeat", nil),
+		httptest.NewRequest(http.MethodPost, "/internal/proxy-register", strings.NewReader(`{"gameUUID":"g","playerName":"p"}`)),
+	} {
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Internal-Key", "anything")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s status = %d, want 401", req.Method, req.URL.Path, response.Code)
+		}
+		if !strings.Contains(response.Body.String(), "invalid internal key") {
+			t.Fatalf("%s %s body = %s", req.Method, req.URL.Path, response.Body.String())
+		}
+	}
+}
+
+// TestAccountRoutesAbsentWithoutAuthClient documents that the /api/auth/*
+// surface only exists when an HRPAuth client is configured.
+func TestAccountRoutesAbsentWithoutAuthClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := ProxyRouter(&fakeProxyService{}, nil, nil)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/auth/verify", strings.NewReader(`{}`)))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 without an auth client", response.Code)
+	}
+}
