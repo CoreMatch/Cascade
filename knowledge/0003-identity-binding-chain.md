@@ -24,7 +24,7 @@ The chain, per connection:
 2. **Intercept `RegisterPlayer`.** When the client sends
    `RegisterPlayer` (type 110), the proxy decodes the player name and game
    UUID (`internal/proxy/session.go:120-129`,
-   `internal/protocol/codec.go:350-368`) and records a proxy binding row
+   `internal/protocol/codec.go:183-200`) and records a proxy binding row
    (`session.go:131-138`).
 3. **Sign a one-time Ed25519 JWT.** The proxy signs a compact JWS with
    `alg: EdDSA`, `kid` from configuration, and claims `iss` (configured
@@ -80,9 +80,9 @@ Costs and limitations:
   retries").
 - 30-second expiry plus one-time `jti` means tokens cannot be cached or
   replayed; a fresh token is signed per session, per bind.
-- HA-side state (chat-command `/login`, `/claim`, quick auth via Redis) is
-  deliberately **not** in the JWT; it stays proxy-local
-  (`session.go:190-321`). The backend learns only the game UUID — by
+- HA-side state (chat-command `/login`, `/claim`, cached auth state in
+  Redis) is deliberately **not** in the JWT; it stays proxy-local
+  (`session.go:182-346`). The backend learns only the game UUID — by
   contract design, so identity transport and authorization policy stay
   separate.
 
@@ -92,14 +92,14 @@ Benefits:
   whose game UUID was not vouched for by the proxy on that exact session.
 - Bind failures are logged without material: only session ID, backend ID,
   and an error summary; never the JWT or key material
-  (`session.go:152-168`, added in commit `df0feb3`).
+  (`session.go:155-168`, added in commit `df0feb3`).
 
 ## Evidence
 
 - `internal/proxy/session.go:77-95` (client→backend gate + bind),
   `:108-110` (backend→client gate), `:120-150` (`bindRegisteredPlayer`),
   `:144-148` (bind timeout from `pending_session_timeout_sec`),
-  `:152-168` (redacted failure logging).
+  `:155-168` (redacted failure logging).
 - `internal/proxy/token.go:32-60` (key loading: Ed25519 PKCS#8, permission
   check), `:62-82` (claims incl. `exp` = +30 s, random `jti`).
 - `internal/backend/client.go:218-221` — `BindIdentity` issues

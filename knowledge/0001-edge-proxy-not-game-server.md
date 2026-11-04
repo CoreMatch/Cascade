@@ -71,25 +71,30 @@ label tables, the `Store` methods `GetBindingByPlayerName`,
 `InternalKey()` getter, `redis.Client.ClearAuthenticated`, and
 `backend.Client.BaseURL`.
 
-**Deliberately kept, pending an author decision** (designed but unwired —
-not pivot leftovers, so not deleted under the confirmation above):
+Author disposition of the remaining items (2026-11-05, "无用的就清；能便宜
+接上的功能缺口就接"):
 
-- `database.Store.CleanupStaleProxyBindings` — a coherent maintenance
-  operation (delete CBH=0 bindings idle for 30 days) with no caller; no
-  scheduler exists in the proxy. Wire it up or delete it.
+- `database.Store.CleanupStaleProxyBindings` — **wired up** (commit
+  `ec9d9e0`): `bindingCleanupLoop` in `internal/app/cleanup.go` runs it on
+  a 24-hour tick started from `app.Run`, with its own error handling (a
+  failed pass logs at error level and retries next tick; it never affects
+  the presence loop or request path). Covered by loop tests plus a real
+  sqlite test (stale unclaimed bindings deleted; claimed and fresh
+  bindings survive).
 - The Redis quick-auth pair `SetQuickAuth`/`CheckQuickAuth` and the
-  `quick_auth` branch of `session.restoreAuth` — the read path runs on
-  every bind, but nothing writes the key, so the branch can never fire.
-  Wire up the write side (e.g. on disconnect for reconnect support) or
-  delete the whole path; the DB `quick_auth` column is migration schema
-  and stays either way.
+  `quick_auth` branch of `session.restoreAuth` — **deleted** (commit
+  `dc04f10`). Relay-era leftover with no writer: double-verified via
+  deadcode analysis and repository-wide grep that nothing ever wrote the
+  `quick_auth:` key, so the branch could never fire. `restoreAuth` keeps
+  the `IsAuthenticated` + binding check, now covered by tests. The DB
+  `quick_auth` column is migration schema and stays untouched.
 - The `players` table (migration `000001`) and the `Player` model —
-  created by the immutable migration history and kept in `AutoMigrate`
-  parity, but no code reads or writes player rows. Dropping the table
-  needs a new migration, which is a schema decision.
+  **kept, record only**: no code reads or writes player rows, but dropping
+  the table requires a new migration, which is a schema decision awaiting
+  author confirmation. No new migration is added until then.
 - Test-only protocol primitives (`Reader`/`Writer` methods, `ReadPacket`,
-  `backend.ReadPreamble`) — they document and verify the wire format and
-  are exercised by the integration tests.
+  `backend.ReadPreamble`) — kept: they document and verify the wire format
+  and are exercised by the integration tests.
 
 ## Consequences
 

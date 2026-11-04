@@ -19,7 +19,7 @@ Routing is decided once per connection, from the client's initial
 
 1. **First packet gate.** The first packet on a new game connection must be
    `PreregisterReceive` (type 160); anything else closes the connection
-   (`internal/proxy/server.go:136-142`, `internal/protocol/types.go:12`).
+   (`internal/proxy/server.go:147-153`, `internal/protocol/types.go:12`).
    Its `Query` field — the room code — is present from packet version 2 on
    (`internal/protocol/codec.go:211-247`).
 2. **No code → default backend.** An empty code routes straight to the
@@ -85,12 +85,12 @@ Benefits:
 
 ## Evidence
 
-- `internal/proxy/server.go:131-175` — `handleConnection`: first-packet
+- `internal/proxy/server.go:142-186` — `handleConnection`: first-packet
   gate, `RouteInitial`, session ID generation, preamble write, raw
   forwarding of the first packet.
-- `internal/protocol/types.go:28-29` — `TypePreregisterReceive = 160`,
+- `internal/protocol/types.go:12-13` — `TypePreregisterReceive = 160`,
   `TypePreregister = 161`.
-- `internal/protocol/codec.go:378-414` — `DecodePreregister`; `Query`
+- `internal/protocol/codec.go:211-247` — `DecodePreregister`; `Query`
   parsed when packet version >= 2.
 - `internal/backend/directory.go:40-76` (construction, mandatory default),
   `:78-96` (prefix overlap validation), `:98-125` (health + snapshot

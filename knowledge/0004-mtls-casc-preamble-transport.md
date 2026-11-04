@@ -110,7 +110,7 @@ Benefits:
 - `internal/backend/transport.go:13-18` (constants: size 24, version 1,
   magic `CASC`), `:20-29` (UUIDv4 generation), `:31-50` (encoding with
   UUID version validation), `:67-88` (decoding).
-- `internal/proxy/server.go:153-167` — session ID generation, preamble
+- `internal/proxy/server.go:164-178` — session ID generation, preamble
   write, then raw forwarding of the first packet.
 - `internal/proxy/session.go:93,112` — raw passthrough in both directions.
 - `internal/backend/client.go` as of commit `1858901` (line references
