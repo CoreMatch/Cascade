@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -27,13 +28,17 @@ type DBConfig struct {
 // NewGORMStore creates a new GORMStore with the given configuration.
 func NewGORMStore(cfg DBConfig, appLogger *log.Logger) (*GORMStore, error) {
 	// golang-migrate owns the schema. GORM AutoMigrate is only a fallback for
-	// when migrations cannot run (for example a missing migrations directory).
-	// Running it on a schema created by the SQL migrations is unsafe: the
-	// sqlite driver parses CREATE TABLE DDL to diff columns, and a table-level
-	// UNIQUE(...) constraint is misread as a column, so any table rebuild fails
-	// with "table ...__temp has no column named UNIQUE".
+	// transient migration failures. A missing migrations directory is fatal:
+	// silently continuing would leave the database without its tables.
+	// Running AutoMigrate on a schema created by the SQL migrations is unsafe:
+	// the sqlite driver parses CREATE TABLE DDL to diff columns, and a
+	// table-level UNIQUE(...) constraint is misread as a column, so any
+	// table rebuild fails with "table ...__temp has no column named UNIQUE".
 	migrated := true
 	if err := RunMigrationsForDB(cfg.Type, cfg.DSN, appLogger); err != nil {
+		if errors.Is(err, ErrMigrationsDirNotFound) {
+			return nil, fmt.Errorf("refusing to start without database migrations: %w", err)
+		}
 		appLogger.Printf("[db] warning: golang-migrate failed: %v, falling back to GORM AutoMigrate", err)
 		migrated = false
 	}

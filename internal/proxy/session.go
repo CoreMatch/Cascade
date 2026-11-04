@@ -79,6 +79,7 @@ func (s *session) clientToBackend(ctx context.Context) error {
 				return errors.New("duplicate player registration packet")
 			}
 			if err := s.bindRegisteredPlayer(ctx, packet.Body); err != nil {
+				s.logBindFailure(err)
 				s.kick("Player identity could not be verified")
 				return err
 			}
@@ -146,6 +147,24 @@ func (s *session) bindRegisteredPlayer(ctx context.Context, body []byte) error {
 		return fmt.Errorf("bind backend session identity: %w", err)
 	}
 	return nil
+}
+
+// logBindFailure records why a player's identity binding failed. Only the
+// session ID, target backend, and an error summary are logged; the JWT,
+// player identity fields, and key material must never appear here.
+func (s *session) logBindFailure(err error) {
+	var apiErr *backend.APIError
+	if errors.As(err, &apiErr) {
+		detail := apiErr.Message
+		if len(detail) > 256 {
+			detail = detail[:256] + "..."
+		}
+		s.server.logger.Printf("[proxy] ERROR identity binding failed: session=%s backend=%s http_status=%d code=%s detail=%q",
+			s.sessionID, s.backendClient.ID, apiErr.Status, apiErr.Code, detail)
+		return
+	}
+	s.server.logger.Printf("[proxy] ERROR identity binding failed: session=%s backend=%s reason=%v",
+		s.sessionID, s.backendClient.ID, err)
 }
 
 func (s *session) restoreAuth() {

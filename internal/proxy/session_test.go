@@ -1,8 +1,14 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"log"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -77,5 +83,37 @@ func TestAuthHandlerLeavesBackendCommandsUnmodified(t *testing.T) {
 	sess := &session{}
 	if sess.handleAuthChat(context.Background(), writer.Bytes()) {
 		t.Fatal("backend-owned /start command was consumed by proxy")
+	}
+}
+
+func TestBindFailureLogCarriesDiagnostics(t *testing.T) {
+	var buf bytes.Buffer
+	sess := &session{
+		server:        &Server{logger: log.New(&buf, "", 0)},
+		backendClient: &backend.Client{ID: "backend-a"},
+		sessionID:     "session-123",
+		writeMu:       new(sync.Mutex),
+	}
+
+	// Backend API errors must surface HTTP status and error code.
+	bindErr := fmt.Errorf("bind backend session identity: %w", &backend.APIError{
+		Status: http.StatusBadGateway, Code: "invalid_token", Message: "token rejected",
+	})
+	sess.logBindFailure(bindErr)
+	line := buf.String()
+	for _, want := range []string{"session-123", "backend-a", "502", "invalid_token", "token rejected"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("log line missing %q: %s", want, line)
+		}
+	}
+
+	// Non-API errors keep the same session/backend context.
+	buf.Reset()
+	sess.logBindFailure(errors.New("decode player registration: short buffer"))
+	line = buf.String()
+	for _, want := range []string{"session-123", "backend-a", "short buffer"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("log line missing %q: %s", want, line)
+		}
 	}
 }
