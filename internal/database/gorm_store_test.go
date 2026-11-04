@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -145,6 +146,50 @@ func TestClaimBindingRejectsDoubleClaimAndUnknownPlayers(t *testing.T) {
 	}
 	if binding == nil || binding.HAUserUUID != "ha-user-1" || binding.CBH != 1 {
 		t.Fatalf("binding changed under a rejected claim: %+v", binding)
+	}
+}
+
+func TestCleanupStaleProxyBindings(t *testing.T) {
+	store := migratedTestStore(t)
+
+	for _, gameUUID := range []string{"stale-guest", "stale-claimed", "fresh-guest"} {
+		if err := store.CreateProxyBinding(gameUUID, "player-"+gameUUID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.ClaimBinding("stale-claimed", "ha-user-1"); err != nil {
+		t.Fatal(err)
+	}
+	// Backdate two bindings beyond the 30-day policy window.
+	stale := time.Now().AddDate(0, 0, -31)
+	if err := store.db.Model(&PlayerBinding{}).
+		Where("game_uuid IN ?", []string{"stale-guest", "stale-claimed"}).
+		Update("last_login", stale).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := store.CleanupStaleProxyBindings()
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("cleanup removed %d bindings, want 1 (only the stale unclaimed one)", removed)
+	}
+
+	if binding, err := store.GetBindingByGameUUID("stale-guest"); err != nil || binding != nil {
+		t.Fatalf("stale guest binding = %+v (err %v), want deleted", binding, err)
+	}
+	if binding, err := store.GetBindingByGameUUID("stale-claimed"); err != nil || binding == nil {
+		t.Fatalf("claimed binding must survive cleanup regardless of age: %+v (err %v)", binding, err)
+	}
+	if binding, err := store.GetBindingByGameUUID("fresh-guest"); err != nil || binding == nil {
+		t.Fatalf("fresh guest binding must survive cleanup: %+v (err %v)", binding, err)
+	}
+
+	// A second pass over a clean table removes nothing and does not fail.
+	removed, err = store.CleanupStaleProxyBindings()
+	if err != nil || removed != 0 {
+		t.Fatalf("second cleanup = (%d, %v), want (0, nil)", removed, err)
 	}
 }
 
