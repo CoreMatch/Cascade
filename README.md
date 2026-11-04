@@ -37,6 +37,8 @@ go run ./cmd/cascade
 
 配置从 v1 自动迁移到 v2，玩家表结构与认证绑定保留。默认不限制连接数；可通过 `max_connections` 设置显式上限。
 
+相对路径先按工作目录、再按可执行文件所在目录解析：`config.yaml` 与 SQLite `db_path` 已存在时从任一位置读取（新文件创建在工作目录），数据库迁移目录同理。独立二进制部署必须随附 `internal/database/migrations` 目录，否则启动时显式报错退出，不会静默跳过建表。
+
 > **从 MCAGS-RW 升级**：默认 SQLite 路径已改为 `data/cascade.db`，请将旧库 `data/rwgin.db` 迁移到新路径（或显式设置 `db_path`）；同时 `proxy_issuer`、`hrpauth_service_name` 与后端 preamble magic 均已变更，需与后端同步更新并重新签发令牌。
 
 ## 路由与接口

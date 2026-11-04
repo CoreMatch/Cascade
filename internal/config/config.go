@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 
+	"cascade/internal/paths"
+
 	"github.com/goccy/go-yaml"
 )
 
@@ -122,37 +124,44 @@ func Load() Config {
 }
 
 // loadOrCreateFile reads the config file, migrating if version is outdated,
-// and creating with defaults if missing.
+// and creating with defaults if missing. An existing config.yaml in the
+// working directory takes precedence, then one next to the executable, so a
+// standalone binary started from a foreign cwd still finds its config. A
+// brand-new file is always created in the working directory.
 func loadOrCreateFile() fileConfig {
-	data, err := os.ReadFile(configFilePath)
+	configPath, found := paths.FirstExisting(configFilePath)
+	if !found {
+		configPath = configFilePath
+	}
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("[config] %s not found, creating with defaults (version %d)", configFilePath, configVersion)
+			log.Printf("[config] %s not found, creating with defaults (version %d)", configPath, configVersion)
 			fc := defaultFileConfig()
-			saveToFile(fc)
+			saveToFile(configPath, fc)
 			return fc
 		}
-		log.Printf("[config] failed to read %s: %v, using defaults", configFilePath, err)
+		log.Printf("[config] failed to read %s: %v, using defaults", configPath, err)
 		return defaultFileConfig()
 	}
 
 	var fc fileConfig
 	if err := yaml.Unmarshal(data, &fc); err != nil {
-		log.Printf("[config] failed to parse %s: %v, using defaults", configFilePath, err)
+		log.Printf("[config] failed to parse %s: %v, using defaults", configPath, err)
 		return defaultFileConfig()
 	}
 
 	if fc.Version < configVersion {
-		log.Printf("[config] migrating %s from version %d to %d", configFilePath, fc.Version, configVersion)
+		log.Printf("[config] migrating %s from version %d to %d", configPath, fc.Version, configVersion)
 		data = migrateConfig(fc.Version, data)
 		if err := yaml.Unmarshal(data, &fc); err != nil {
-			log.Printf("[config] failed to parse migrated config %s: %v, using defaults", configFilePath, err)
+			log.Printf("[config] failed to parse migrated config %s: %v, using defaults", configPath, err)
 			return defaultFileConfig()
 		}
-		saveToFile(fc)
+		saveToFile(configPath, fc)
 	} else if fc.Version > configVersion {
 		log.Printf("[config] %s has version %d, but expected <= %d; using defaults",
-			configFilePath, fc.Version, configVersion)
+			configPath, fc.Version, configVersion)
 		return defaultFileConfig()
 	}
 
@@ -194,15 +203,15 @@ func defaultFileConfig() fileConfig {
 	}
 }
 
-// saveToFile writes the fileConfig to disk as YAML.
-func saveToFile(fc fileConfig) {
+// saveToFile writes the fileConfig to disk as YAML at the given path.
+func saveToFile(path string, fc fileConfig) {
 	data, err := yaml.Marshal(fc)
 	if err != nil {
 		log.Printf("[config] failed to marshal config: %v", err)
 		return
 	}
-	if err := os.WriteFile(configFilePath, data, 0644); err != nil {
-		log.Printf("[config] failed to write %s: %v", configFilePath, err)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[config] failed to write %s: %v", path, err)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"cascade/internal/auth"
 	"cascade/internal/config"
 	"cascade/internal/database"
+	"cascade/internal/paths"
 	"cascade/internal/proxy"
 	"cascade/internal/redis"
 )
@@ -42,6 +43,14 @@ func New(cfg config.Config, logger *log.Logger, sdkFS embed.FS) *App {
 
 	// Ensure SQLite directory exists
 	if cfg.DBType == "sqlite" || cfg.DBType == "" {
+		// A relative db_path may refer to a database that lives next to the
+		// executable when the binary is started from a different working
+		// directory; prefer that existing file over creating a fresh one.
+		if !filepath.IsAbs(dsn) {
+			if resolved, ok := paths.FirstExisting(dsn); ok {
+				dsn = resolved
+			}
+		}
 		if err := os.MkdirAll(filepath.Dir(dsn), 0755); err != nil {
 			logger.Fatalf("failed to create db directory: %v", err)
 		}

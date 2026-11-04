@@ -2,10 +2,13 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
+	"strings"
+
+	"cascade/internal/paths"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
@@ -13,6 +16,11 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/file"
 )
+
+// ErrMigrationsDirNotFound reports that no migrations directory could be
+// located. Starting without versioned migrations would leave the database
+// without tables, so callers must treat this as fatal instead of skipping.
+var ErrMigrationsDirNotFound = errors.New("migrations directory not found")
 
 // RunMigrations runs database migrations using golang-migrate.
 // dbType should be "sqlite" or "mysql".
@@ -40,16 +48,17 @@ func RunMigrations(dbType, dsn, migrationsDir string, logger *log.Logger) error 
 		return fmt.Errorf("create migration driver: %w", err)
 	}
 
-	// Get absolute path to migrations directory
-	absMigrationsDir, err := filepath.Abs(migrationsDir)
+	// Resolve the migrations directory. Relative paths are looked up in the
+	// working directory first (source checkout / go run) and next to the
+	// executable second (standalone installs). A missing directory is an
+	// error: silently skipping would leave the database without its tables.
+	resolvedDir, ok := paths.FirstExisting(migrationsDir)
+	if !ok {
+		return fmt.Errorf("%w: tried %s", ErrMigrationsDirNotFound, strings.Join(paths.Candidates(migrationsDir), ", "))
+	}
+	absMigrationsDir, err := filepath.Abs(resolvedDir)
 	if err != nil {
 		return fmt.Errorf("get absolute path: %w", err)
-	}
-
-	// Check if migrations directory exists
-	if _, err := os.Stat(absMigrationsDir); os.IsNotExist(err) {
-		logger.Printf("[migrate] migrations directory not found: %s, skipping", absMigrationsDir)
-		return nil
 	}
 
 	// Create file source
