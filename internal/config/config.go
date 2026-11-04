@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"log"
 	"os"
 	"strconv"
@@ -543,12 +541,4 @@ func lookupEnvFloat32(key string) (float32, bool) {
 		}
 	}
 	return 0, false
-}
-
-func randomHex(n int) string {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return "cascade-relay"
-	}
-	return hex.EncodeToString(buf)
 }
