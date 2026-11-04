@@ -1,3 +1,11 @@
+# Migration notice — this copy is deprecated and will be removed in the next
+# commit; keep it only for git-history traceability.
+#   authoritative source: CoreMatch/HA-Contract
+#                         docs/api/openapi/cascade-backend-v1.yaml
+#                         (document: docs/dev/Cascade/Cascade-Backend-v1.md)
+#   imported there on:    2026-11-04, HA-Contract commit adcef20
+#                         (content taken from this repository at f94f511)
+#   Do not edit this copy; contract changes belong in HA-Contract.
 openapi: 3.1.0
 info:
   title: Cascade Backend Contract

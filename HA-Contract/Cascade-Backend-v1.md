@@ -1,3 +1,15 @@
+> **Migration notice** — this copy is deprecated and will be removed in the
+> next commit; keep it only for git-history traceability.
+>
+> - Authoritative source: [CoreMatch/HA-Contract](https://github.com/CoreMatch/HA-Contract),
+>   `docs/dev/Cascade/Cascade-Backend-v1.md`
+>   (OpenAPI: `docs/api/openapi/cascade-backend-v1.yaml`)
+> - Imported there on 2026-11-04 at HA-Contract commit `adcef20`
+>   (content taken from this repository at `f94f511`)
+> - Do not edit this copy; contract changes belong in HA-Contract.
+
+---
+
 # Cascade Backend Contract v1
 
 This contract defines the boundary between the Cascade edge proxy and an
