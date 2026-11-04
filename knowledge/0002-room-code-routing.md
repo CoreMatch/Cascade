@@ -27,7 +27,7 @@ Routing is decided once per connection, from the client's initial
    `default_backend_id` is mandatory, `directory.go:41-43`).
 3. **Exact room match from snapshots.** Each backend's room ownership is
    polled via `GET /v1/rooms` every 5 seconds by default
-   (`room_snapshot_interval_sec`, `internal/config/config.go:204`;
+   (`room_snapshot_interval_sec`, `internal/config/config.go:209`;
    fallback default in `directory.go:53-55`). A room code found in exactly
    one backend's latest snapshot routes to that backend
    (`directory.go:224-234`).
@@ -68,7 +68,7 @@ Costs and limitations:
   default): a freshly created room may briefly be routed by prefix or
   default instead of exact ownership.
 - Conflicting room ownership is detected and surfaced via
-  `GET /api/backends` (`directory.go:283-319`) but never resolved
+  `GET /api/backends` (`directory.go:283-320`) but never resolved
   automatically; operators must fix the backend configuration or the
   backends themselves.
 - Rooms that no backend reports simply do not exist for routing purposes;
@@ -97,12 +97,12 @@ Benefits:
   tickers), `:154-169` (3-failure/2-success health rule), `:171-198`
   (snapshot refresh), `:220-258` (`RouteRoom` precedence), `:260-265`
   (`RouteInitial`).
-- `internal/config/config.go:203-205` — defaults `health_interval_sec: 5`,
+- `internal/config/config.go:208-210` — defaults `health_interval_sec: 5`,
   `room_snapshot_interval_sec: 5`, `pending_session_timeout_sec: 5`.
 - HA-Contract repository, `docs/dev/Cascade/Cascade-Backend-v1.md`:
   "Game TCP preamble" (routing from the initial Preregister only; streams
   never moved), "Room snapshot" (5-second polling, snapshot authority,
   conflict rule, rebuild after restart), "Health and directory behavior"
   (probe cadence, health thresholds, no automatic reassignment).
-- `README.md:46` — operator-facing statement of the same precedence.
+- `README.md:44` — operator-facing statement of the same precedence.
 - Commit `51e81b8` — introduction of `internal/backend/directory.go`.
