@@ -125,7 +125,7 @@ illustrative example, not a prescribed value.
   `PresenceRequest.ttl_seconds` at `:1173-1175` ("Self-declared lifetime in
   seconds; <=0 or omitted means never expires"). No default value for
   `ttl_seconds` is prescribed anywhere in the spec.
-- HA-Contract repository, `docs/dev/HRPAuth/microservices.md:43-59`
+- [xref] HA-Contract repository, `docs/dev/HRPAuth/microservices.md:43-59`
   (registration example using `"ttl_seconds": 120`), `:64` (`ttl_seconds`
   semantics: optional; `<= 0` or omitted = never expires), `:88` (repeated
   heartbeats keep `first_seen`, refresh `last_seen`; expired records are

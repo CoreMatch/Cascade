@@ -145,9 +145,10 @@ plus the real end-to-end `TestCascadeRealProxyE2E` afterwards.
   — were present at 99/113/150 lines; repository-wide search for
   `cascade/internal/game` returned no imports (verified 2026-11-04,
   re-verified 2026-11-05). **Deleted in `9801368`.**
-- `internal/game/map.go:7` — was the sole repository import of
-  `github.com/lafriks/go-tiled`; `go mod tidy` removed the dependency in
-  `9801368` once the package was gone.
+- `internal/game/map.go:7 @ 730d347` — was the sole repository import of
+  `github.com/lafriks/go-tiled` (time-point anchor: the file was deleted in
+  `9801368`); `go mod tidy` removed the dependency in the same commit once
+  the package was gone.
 - `internal/config/config.go` — legacy fields had no consumer outside this
   file (repository-wide search, verified 2026-11-04 and 2026-11-05); the
   fields, their `RWGIN_*` env overrides, and the `heartbeat_interval_sec`

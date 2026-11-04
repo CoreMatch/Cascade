@@ -140,10 +140,9 @@ Benefits:
   here in committable form: see
   [appendix-plain-transport-e2e.md](appendix-plain-transport-e2e.md) for the
   full source, layout, and reproduction steps.
-- RW-HPS Go Server: `internal/net/gateway/trust.go` (trust tiers; `""` ≡
-  `open`), `internal/net/gateway/gateway.go:125-153` (server TLS only when
-  certificates are configured), `internal/app/cascade.go:26-88` (gateway
-  assembly), README "Cascade 边缘代理模式" (D-24).
+- [xref] RW-HPS Go Server: `internal/net/gateway/trust.go` (trust tiers; `""` ≡ `open`),
+  `internal/net/gateway/gateway.go:125-153` (server TLS only when certificates are configured), [xref]
+  `internal/app/cascade.go:26-88` (gateway assembly), README "Cascade 边缘代理模式" (D-24). [xref]
 - Cross-references: 0004 (the preamble and passthrough are unchanged; its
   "always mutual TLS" transport statement is superseded here), 0003
   (identity chain, transport-independent).
