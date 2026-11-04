@@ -13,16 +13,22 @@ import (
 
 // fakeCleaner records cleanup passes and fails on demand.
 type fakeCleaner struct {
-	mu       sync.Mutex
-	calls    int
-	failures int
-	removed  int64
+	mu         sync.Mutex
+	calls      int
+	failures   int
+	failAlways bool
+	removed    int64
+	callTimes  []time.Time
 }
 
 func (f *fakeCleaner) CleanupStaleProxyBindings() (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
+	f.callTimes = append(f.callTimes, time.Now())
+	if f.failAlways {
+		return 0, errors.New("database is locked")
+	}
 	if f.failures > 0 {
 		f.failures--
 		return 0, errors.New("database is locked")
@@ -34,6 +40,14 @@ func (f *fakeCleaner) Calls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+func (f *fakeCleaner) CallTimes() []time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]time.Time, len(f.callTimes))
+	copy(out, f.callTimes)
+	return out
 }
 
 func waitForCleanerCalls(t *testing.T, f *fakeCleaner, want int, timeout time.Duration) int {
@@ -132,5 +146,50 @@ func TestBindingCleanupLoopStopsImmediatelyWhenCancelled(t *testing.T) {
 	}
 	if f.Calls() != 0 {
 		t.Fatalf("loop cleaned after cancellation: %d calls", f.Calls())
+	}
+}
+
+// TestBindingCleanupLoopNeverRetriesWithinATick pins the failure cadence:
+// when the database is unavailable the loop must not hammer it. Exactly one
+// call happens per tick (no immediate retry burst), and nothing runs before
+// the first tick fires.
+func TestBindingCleanupLoopNeverRetriesWithinATick(t *testing.T) {
+	f := &fakeCleaner{failAlways: true}
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	const interval = 40 * time.Millisecond
+	go func() {
+		bindingCleanupLoop(ctx, f, interval, logger)
+		close(done)
+	}()
+
+	// The first pass must wait for the first tick, not run at startup.
+	time.Sleep(interval / 2)
+	if got := f.Calls(); got != 0 {
+		t.Fatalf("cleanup ran before the first tick: %d calls", got)
+	}
+
+	if got := waitForCleanerCalls(t, f, 3, 2*time.Second); got < 3 {
+		t.Fatalf("expected at least 3 cleanup passes, got %d", got)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup loop did not stop after context cancellation")
+	}
+
+	times := f.CallTimes()
+	for i := 1; i < len(times); i++ {
+		gap := times[i].Sub(times[i-1])
+		if gap < interval-5*time.Millisecond {
+			t.Fatalf("gap between pass %d and %d was %s — a failing cleanup retried within the tick interval", i-1, i, gap)
+		}
+	}
+	if got := strings.Count(buf.String(), "[cleanup] ERROR"); got != len(times) {
+		t.Fatalf("expected one error log per failed pass (%d), got %d: %s", len(times), got, buf.String())
 	}
 }
