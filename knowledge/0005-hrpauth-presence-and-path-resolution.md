@@ -35,7 +35,7 @@ directory.
 - `ttl_seconds <= 0` declares a never-expiring record per the HRPAuth
   contract and disables the loop (`presence.go:25-28`; HA-Contract
   `hrpauth-business.yaml`, `PresenceRequest.ttl_seconds`). The default TTL
-  is 120 s (`internal/config/config.go:194`), configurable via
+  is 120 s (`internal/config/config.go:199`), configurable via
   `presence_ttl_sec` / `RWGIN_PRESENCE_TTL_SEC`.
 - **There is no deregistration.** The HRPAuth contract exposes only
   `POST /services/presence` (register or heartbeat); no deregister endpoint
@@ -51,7 +51,7 @@ directory.
   (`paths.go:38-45`). This applies to:
   - `config.yaml` — an existing file is read from either location; a
     brand-new file is always created in the working directory
-    (`internal/config/config.go:128-137`).
+    (`internal/config/config.go:133-142`).
   - the SQLite `db_path` — an existing database found next to the
     executable wins over creating a fresh one in the cwd
     (`internal/app/app.go:44-57`).
@@ -63,7 +63,7 @@ directory.
   database without tables (historically surfacing later as "no such table:
   player_bindings" during identity binding — commit `3b46aac`). Standalone
   deployments must therefore ship `internal/database/migrations`
-  (`README.md:40`).
+  (`README.md:38`).
 
 ## Consequences
 
@@ -93,7 +93,7 @@ Why the default TTL is exactly 120 s: the author no longer recalls the
 original rationale (2026-11-04), and a contract check settles the question.
 The HRPAuth contract prescribes **no default** for `ttl_seconds`: the field
 is optional, and `<= 0` or omission means "never expires" (HA-Contract
-`hrpauth-business.yaml:1173-1175`; `microservices.md:64`). **120 s therefore
+`hrpauth-business.yaml:1217-1219`; `microservices.md:64`). **120 s therefore
 comes from this repository's own historical implementation — the value
 already used by the original one-shot registration (`9dceaf6`); it is not a
 contract-mandated default and not an ecosystem convention.** The only
@@ -113,16 +113,16 @@ illustrative example, not a prescribed value.
   `ttl_seconds`, `security_level: 0`), `:321-342` (`RegisterRelay`).
 - `internal/paths/paths.go:24-33` (`Candidates`: cwd then executable dir),
   `:38-45` (`FirstExisting`).
-- `internal/config/config.go:128-137` (config lookup/creation), `:194`
+- `internal/config/config.go:133-142` (config lookup/creation), `:199`
   (`PresenceTTLSec` default 120).
 - `internal/database/migrate.go:20-23` (`ErrMigrationsDirNotFound`),
   `:51-58` (resolution + fatal on missing), `:87-97` (per-db-type
   migrations dirs under `internal/database/migrations/`).
 - HA-Contract repository, `docs/api/openapi/hrpauth-business.yaml`:
-  `/services/presence` at `:703-714` (POST only — register or heartbeat;
+  `/services/presence` at `:706-716` (POST only — register or heartbeat;
   re-verified 2026-11-04 against the spec's complete path list: no
   deregister or DELETE operation for presence exists anywhere) and
-  `PresenceRequest.ttl_seconds` at `:1173-1175` ("Self-declared lifetime in
+  `PresenceRequest.ttl_seconds` at `:1217-1219` ("Self-declared lifetime in
   seconds; <=0 or omitted means never expires"). No default value for
   `ttl_seconds` is prescribed anywhere in the spec.
 - HA-Contract repository, `docs/dev/HRPAuth/microservices.md:43-59`
@@ -135,5 +135,5 @@ illustrative example, not a prescribed value.
   backoff, and the contract check for the TTL unit); `3b46aac` "fix(db):
   resolve runtime paths next to the executable and fail loudly when
   migrations are missing" (documents the silent table-less startup bug).
-- `README.md:40` — operator-facing path-resolution and migrations-shipping
+- `README.md:38` — operator-facing path-resolution and migrations-shipping
   statement.
