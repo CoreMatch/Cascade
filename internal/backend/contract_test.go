@@ -2,13 +2,48 @@ package backend
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/goccy/go-yaml"
 )
 
+// locateContractOpenAPI finds the Cascade backend OpenAPI document. The
+// authoritative copy lives in the HA-Contract repository; the in-repo copy
+// has been removed. Set HA_CONTRACT_DIR to a HA-Contract checkout when the
+// sibling-checkout candidates do not fit the local layout.
+func locateContractOpenAPI(t *testing.T) string {
+	t.Helper()
+	const newLayoutRel = "docs/api/openapi/cascade-backend-v1.yaml"
+	const legacyRel = "openapi/cascade-backend-v1.yaml"
+
+	var candidates []string
+	if dir := os.Getenv("HA_CONTRACT_DIR"); dir != "" {
+		candidates = append(candidates,
+			filepath.Join(dir, newLayoutRel),
+			filepath.Join(dir, legacyRel),
+			filepath.Join(dir, "cascade-backend-v1.yaml"),
+		)
+	}
+	// Relative to this package (internal/backend); ../.. is the repo root.
+	candidates = append(candidates,
+		filepath.Join("..", "..", "HA-Contract", "openapi", "cascade-backend-v1.yaml"), // historical in-repo copy
+		filepath.Join("..", "..", "..", "HA-Contract", newLayoutRel),                    // sibling checkout of HA-Contract
+	)
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	t.Skipf("HA-Contract OpenAPI not found (set HA_CONTRACT_DIR to a HA-Contract checkout); tried: %s",
+		strings.Join(candidates, ", "))
+	return ""
+}
+
 func TestOpenAPIContractParsesAndDefinesCoreEndpoints(t *testing.T) {
-	data, err := os.ReadFile("../../HA-Contract/openapi/cascade-backend-v1.yaml")
+	path := locateContractOpenAPI(t)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
