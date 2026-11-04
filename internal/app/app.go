@@ -118,6 +118,9 @@ func (a *App) Run(ctx context.Context) error {
 				a.logger.Printf("[startup] warning: service registration failed: %v", err)
 			}
 		}()
+		// Keep the presence record alive: the one-shot registration above
+		// expires after its TTL unless renewed.
+		go presenceLoop(ctx, a.authClient, a.cfg.PresenceTTLSec, presenceInterval(a.cfg.PresenceTTLSec), a.logger)
 	}
 
 	go func() {
@@ -149,7 +152,7 @@ func (a *App) registerService() error {
 	if prefix == "" {
 		prefix = "/rusted-warfare"
 	}
-	if err := a.authClient.RegisterPresence(prefix); err != nil {
+	if err := a.authClient.RegisterPresence(a.cfg.PresenceTTLSec); err != nil {
 		return fmt.Errorf("register presence: %w", err)
 	}
 	a.logger.Printf("[startup] presence registered with prefix %s", prefix)

@@ -2,7 +2,7 @@
 
 Cascade 是 Rusted Warfare 群组服务器的边缘反向代理。它接收客户端连接、按初始 `Preregister` 房间码选择后端、处理现有 HRPAuth 玩家认证，并在代理与独立后端之间转发原生游戏协议帧。
 
-房间、大厅、对局和游戏协议行为由独立后端负责。本仓库不实现或维护生产后端。双方接口契约位于 [`HA-Contract/Cascade-Backend-v1.md`](HA-Contract/Cascade-Backend-v1.md)，配套 OpenAPI 位于 `HA-Contract/openapi/cascade-backend-v1.yaml`。
+房间、大厅、对局和游戏协议行为由独立后端负责。本仓库不实现或维护生产后端。双方接口契约的权威源位于 HA-Contract 仓库：[`docs/dev/Cascade/Cascade-Backend-v1.md`](https://github.com/CoreMatch/HA-Contract/blob/main/docs/dev/Cascade/Cascade-Backend-v1.md)，配套 OpenAPI 为 [`docs/api/openapi/cascade-backend-v1.yaml`](https://github.com/CoreMatch/HA-Contract/blob/main/docs/api/openapi/cascade-backend-v1.yaml)。
 
 ## 配置与运行
 

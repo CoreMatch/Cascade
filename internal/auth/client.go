@@ -304,10 +304,13 @@ func (c *Client) doAuthRequest(method, path string, body interface{}) error {
 }
 
 // RegisterPresence registers this service's presence with HRPAuth Core.
-func (c *Client) RegisterPresence(relayPrefix string) error {
+// ttlSeconds is the self-declared lifetime in seconds sent with the record;
+// repeating the call before the TTL expires acts as the heartbeat (the
+// contract keeps first_seen and refreshes last_seen on repeated posts).
+func (c *Client) RegisterPresence(ttlSeconds int) error {
 	body := map[string]interface{}{
 		"name":           c.serviceName,
-		"ttl_seconds":    120,
+		"ttl_seconds":    ttlSeconds,
 		"security_level": 0,
 	}
 	return c.doAuthRequest("POST", "/services/presence", body)
