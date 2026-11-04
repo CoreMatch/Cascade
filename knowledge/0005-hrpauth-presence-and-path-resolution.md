@@ -89,10 +89,17 @@ Benefits:
   and from a foreign cwd, and misdeployment is loud (startup abort) instead
   of silent (empty database).
 
-Why the default TTL is exactly 120 s is not documented — the fix commit
-records only that this was the value already used by the original one-shot
-registration (`9dceaf6`). Pending author confirmation whether 120 s is an
-intentional ecosystem convention.
+Why the default TTL is exactly 120 s: the author no longer recalls the
+original rationale (2026-11-04), and a contract check settles the question.
+The HRPAuth contract prescribes **no default** for `ttl_seconds`: the field
+is optional, and `<= 0` or omission means "never expires" (HA-Contract
+`hrpauth-business.yaml:1173-1175`; `microservices.md:64`). **120 s therefore
+comes from this repository's own historical implementation — the value
+already used by the original one-shot registration (`9dceaf6`); it is not a
+contract-mandated default and not an ecosystem convention.** The only
+numerical data point in the contract repository is the registration example
+in `microservices.md:46`, which happens to use `"ttl_seconds": 120` — an
+illustrative example, not a prescribed value.
 
 ## Evidence
 
@@ -112,10 +119,17 @@ intentional ecosystem convention.
   `:51-58` (resolution + fatal on missing), `:87-97` (per-db-type
   migrations dirs under `internal/database/migrations/`).
 - HA-Contract repository, `docs/api/openapi/hrpauth-business.yaml`:
-  `/services/presence` (POST only — register or heartbeat; no deregister
-  operation exists in the paths section) and
-  `PresenceRequest.ttl_seconds` ("Self-declared lifetime in seconds; <=0
-  or omitted means never expires").
+  `/services/presence` at `:703-714` (POST only — register or heartbeat;
+  re-verified 2026-11-04 against the spec's complete path list: no
+  deregister or DELETE operation for presence exists anywhere) and
+  `PresenceRequest.ttl_seconds` at `:1173-1175` ("Self-declared lifetime in
+  seconds; <=0 or omitted means never expires"). No default value for
+  `ttl_seconds` is prescribed anywhere in the spec.
+- HA-Contract repository, `docs/dev/HRPAuth/microservices.md:43-59`
+  (registration example using `"ttl_seconds": 120`), `:64` (`ttl_seconds`
+  semantics: optional; `<= 0` or omitted = never expires), `:88` (repeated
+  heartbeats keep `first_seen`, refresh `last_seen`; expired records are
+  cleaned lazily on access).
 - Commits: `9dceaf6` "fix(auth): renew HRPAuth presence before its TTL
   expires" (documents the original one-shot bug, the half-TTL cadence,
   backoff, and the contract check for the TTL unit); `3b46aac` "fix(db):
