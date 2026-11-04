@@ -92,7 +92,7 @@ Costs and limitations:
 - The preamble is a hard compatibility boundary: unknown magic, version, or
   header size makes the backend close the connection (contract). The magic
   rename `MCAG` → `CASC` in `69faeb7` therefore invalidates old backends
-  (flagged as BREAKING CHANGE in that commit; upgrade note in `README.md:42`).
+  (flagged as BREAKING CHANGE in that commit; upgrade note in `README.md:40`).
 - Passthrough means the proxy cannot inspect, filter, or rate-limit game
   payloads; connection-level limits (`max_connections`, read timeouts) are
   the only controls (`internal/proxy/server.go:84-99`).

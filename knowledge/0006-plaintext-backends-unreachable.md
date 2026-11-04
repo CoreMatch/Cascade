@@ -29,7 +29,7 @@ implementation followed.
 ## Decision
 
 **Per-backend declaration drives the transport.** Each configured backend
-carries two fields (`internal/config/config.go:20-32`):
+carries two fields (`internal/config/config.go:18-30`):
 
 - `trust_mode` — the trust strategy the operator declares for that backend
   (`open`, `ip`, or `pinned`), mirroring the backend's own configuration.
@@ -113,7 +113,7 @@ Benefits:
   table, fail-closed default, plain/pinned conflict),
   `internal/backend/client.go:95-143` (NewClient: resolution, scheme
   validation, material only for mTLS), `:177-189` (DialGame plain vs TLS),
-  `internal/config/config.go:20-32` (`trust_mode`/`tls_mode` fields),
+  `internal/config/config.go:18-30` (`trust_mode`/`tls_mode` fields),
   `internal/backend/client.go:67` + `directory.go:288-295` (resolved
   transport in `/api/backends`). Commits `cfa374b` (implementation),
   `193de11` (config.example.yaml, README).
