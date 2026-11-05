@@ -1,9 +1,7 @@
 # 0004 — mTLS + 24-Byte CASC Preamble + Byte Passthrough
 
-- **Status**: accepted (preamble and passthrough current; the "always mTLS"
-  transport decision below is superseded by 0006 as of 2026-11-05)
-- **Date**: 2026-11-04 (introduced in commit `51e81b8`, 2026-10-25; magic
-  renamed `MCAG` → `CASC` in `69faeb7`)
+- **Status**: accepted
+- **Date**: 2026-11-04 (introduced in commit `51e81b8`, 2026-10-25)
 
 ## Context
 
@@ -13,11 +11,11 @@ level: (1) the backend must be able to correlate a raw game TCP stream with
 the control-plane identity bind (see 0003) before any Rusted Warfare bytes
 arrive; (2) the proxy must forward the native game protocol without
 interpreting it, because game protocol behavior is owned by the backend
-(see 0001). Separately, contract v1.1 split **transport** (TLS or plaintext
-is a backend deployment property) from **trust** (how the backend
-authenticates the proxy), defining three backend-selected trust strategies:
-`open`, `ip`, and `pinned` (HA-Contract `Cascade-Backend-v1.md`, "Transport
-and trust" / "Backend trust strategies").
+(see 0001). Separately, the contract separates **transport** (TLS or
+plaintext is a backend deployment property) from **trust** (how the backend
+authenticates the proxy) and defines three backend-selected trust
+strategies: `open`, `ip`, and `pinned` (HA-Contract `Cascade-Backend-v1.md`,
+"Transport and trust" / "Backend trust strategies", v1.2.1).
 
 ## Decision
 
@@ -47,23 +45,11 @@ packets the proxy inspects are those it must act on (identity gate in 0003,
 chat commands for HRPAuth login/claim at
 `internal/proxy/session.go::handleAuthChat`).
 
-**Proxy-side transport was always mutual TLS.** _(Superseded by 0006,
-2026-11-05: transport is now derived per backend from the declared trust
-strategy — plaintext for `open`/`ip`, mTLS for `pinned` or when the
-declaration is missing/unparseable. The description below is the historical
-v1-era behavior.)_ Toward every backend, both the `/v1` control plane and
-the game TCP dial used TLS with a client certificate: `control_url` had to
-be an absolute `https` URL; the TLS configuration required a client
-certificate, key, and CA pool, rejected group/other-readable private keys,
-and enforced TLS >= 1.2; the game connection dialed with the same
-configuration. Startup refused to start without all three material paths.
-
-**Interplay with the backend trust strategies.** The proxy unconditionally
-presents its client certificate and signs identity JWTs regardless of which
-strategy the backend runs _(since 0006, 2026-11-05, the client certificate
-is presented only toward backends resolved to mTLS; plaintext backends
-receive none. JWT signing is still unconditional.)_; the strategies differ
-only in what the backend checks (contract, "Backend trust strategies"):
+**Interplay with the backend trust strategies.** The proxy presents its
+client certificate only toward backends resolved to mTLS; plaintext backends
+receive none. Identity JWTs are signed unconditionally on every bind,
+regardless of which strategy the backend runs; the strategies differ only
+in what the backend checks (contract, "Backend trust strategies"):
 
 - `open` — backend checks neither certificate nor JWT signature; structural
   claim checks and the one-time `jti` ledger still apply.
@@ -75,33 +61,25 @@ only in what the backend checks (contract, "Backend trust strategies"):
   are closed before the preamble is read; control-plane requests get `403`
   with code `FORBIDDEN`.
 
-The proxy implementation predates v1.1 (v1 mandated mutual TLS plus Ed25519
-signature verification). It originally always provisioned mTLS material and
-always signed JWTs; contract v1.1 noted the proxy "still signs JWTs and may
-still present client certificates — backends without fingerprint checks
-simply do not require them" (Changelog, v1 → v1.1). Since 0006 (2026-11-05,
-contract v1.2) the proxy derives the transport from the declared trust
-strategy instead of always provisioning mTLS, but it still signs JWTs on
-every bind regardless of strategy.
+The per-backend transport selection — which backends are reached over mTLS
+and which over plaintext — is defined in 0006.
 
 ## Consequences
 
 Costs and limitations:
 
-- The proxy **was over-provisioned under `open` and `ip` backends**:
-  deployments had to generate and mount client certificates, keys, CAs, and
-  an Ed25519 signing key even when the backend checked none of them.
-  Resolved by 0006 (accepted 2026-11-05): `open`/`ip` backends now connect
-  in plaintext with no certificate material; only the Ed25519 signing key is
-  still always required, because the proxy signs JWTs on every bind.
 - The preamble is a hard compatibility boundary: unknown magic, version, or
-  header size makes the backend close the connection (contract). The magic
-  rename `MCAG` → `CASC` in `69faeb7` therefore invalidates old backends
-  (flagged as BREAKING CHANGE in that commit; upgrade note in
-  `README.md:L40`).
-- Passthrough means the proxy cannot inspect, filter, or rate-limit game
-  payloads; connection-level limits (`max_connections`, read timeouts) are
-  the only controls (`internal/proxy/server.go::acquireConnection`).
+  header size makes the backend close the connection (contract).
+- Passthrough means the proxy does not interpret game payloads beyond the
+  packets it must act on: the identity gate (0003) and HRPAuth chat
+  commands. Recognized chat commands (`/login`, `/claim`, `/whoami`,
+  `/lang`) are checked and rate-limited per player
+  (`internal/config/config.go (field: chat_rate_limit)`,
+  `internal/proxy/session.go::handleAuthChat`,
+  `internal/proxy/session.go::allowCommand`); every other payload is
+  forwarded unmodified. Connection-level limits (`max_connections`, read
+  timeouts) bound the load
+  (`internal/proxy/server.go::acquireConnection`).
 
 Benefits:
 
@@ -126,21 +104,7 @@ Benefits:
 - `internal/proxy/session.go::clientToBackend`,
   `internal/proxy/session.go::backendToClient` — raw passthrough in both
   directions.
-- `internal/backend/client.go` as of commit `1858901` (time-point anchors;
-  the always-mTLS transport was replaced in 0006):
-  `internal/backend/client.go:L91-L94 @ 1858901` (https-only control URL),
-  `internal/backend/client.go:L118-L146 @ 1858901` (`makeTLSConfig`:
-  cert/key/CA required, key permission check, TLS >= 1.2),
-  `internal/backend/client.go:L148-L157 @ 1858901` (`DialGame` with the
-  same TLS config). Current transport evidence lives in 0006.
 - HA-Contract repository, `docs/dev/Cascade/Cascade-Backend-v1.md`:
   "Transport and trust", "Backend trust strategies" (open/ip/pinned,
-  `FORBIDDEN`), "Game TCP preamble" (layout table, rejection behavior),
-  "Changelog" v1 → v1.1 (trust strategies replace mandatory mTLS +
-  signature verification).
-- Commits: `51e81b8` (transport introduced), `69faeb7` (magic `MCAG` →
-  `CASC`, BREAKING CHANGE), `7750528` (in-repo contract copies removed once
-  HA-Contract became authoritative).
-- `README.md` as of commit `1858901` (historical; reworded in 0006's commit
-  `193de11`) — mandatory mTLS material, permission requirements, MCAGS-RW
-  upgrade note.
+  `FORBIDDEN`), "Game TCP preamble" (layout table, rejection behavior).
+- Commits: `51e81b8` (transport introduced).

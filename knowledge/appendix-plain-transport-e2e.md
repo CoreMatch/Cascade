@@ -7,7 +7,7 @@
 
 The plaintext counterpart of the RW-HPS Go Server's
 `TestCascadeRealProxyE2E` (which exercises the mTLS path). It proves
-contract v1.2 "Proxy transport selection" end to end: a gateway with **no
+contract v1.2.1 "Proxy transport selection" end to end: a gateway with **no
 server certificates** (plaintext transport, trust `open`) plus a Cascade
 configured with `trust_mode: open` / `tls_mode: auto` resolves to
 `transport=plain`, needs no certificate material, and still carries the
@@ -64,7 +64,7 @@ toolchain is unavailable (same contract as `TestCascadeRealProxyE2E`).
 ```go
 package gateway_test
 
-// 明文传输联调 (契约 v1.2 "Proxy transport selection"): Go 网关不配服务端
+// 明文传输联调 (契约 v1.2.1 "Proxy transport selection"): Go 网关不配服务端
 // 证书 (传输=明文, trust=open), Cascade 声明 trust_mode=open / tls_mode=auto
 // -> 推导出明文传输, 不携带任何 mTLS 材料. 验证:
 //   客户端连 Cascade -> 明文前导/门控 -> 身份绑定 -> 转发进引擎 -> 真实开局到结算.

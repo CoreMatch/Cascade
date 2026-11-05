@@ -1,31 +1,26 @@
 # 0006 — Transport Follows the Backend's Declared Trust Strategy
 
 - **Status**: accepted
-- **Date**: 2026-11-04 (gap recorded as `proposed` under the title "Proxy
-  Transport Is TLS-Only: Plaintext Backends Are Unreachable"); approved by
-  the author and implemented 2026-11-05
+- **Date**: 2026-11-05
 
 ## Context
 
-Since contract v1.1, **transport and trust are separate decisions on the
-backend** (HA-Contract `Cascade-Backend-v1.md`, "Transport and trust"
-section): a backend may serve TLS or plaintext on the game endpoint and the
-control plane, and trust is chosen independently from `open` / `ip` /
-`pinned` ("Backend trust strategies" section). Under `open` and `ip`, the
-backend performs no client-certificate checks at all, so plaintext transport
-combined with `open` or `ip` trust is a legitimate contract-level
-combination that needs no certificate material on either side.
+**Transport and trust are separate decisions on the backend** (HA-Contract
+`Cascade-Backend-v1.md`, "Transport and trust" section): a backend may serve
+TLS or plaintext on the game endpoint and the control plane, and trust is
+chosen independently from `open` / `ip` / `pinned` ("Backend trust
+strategies" section). Under `open` and `ip`, the backend performs no
+client-certificate checks at all, so plaintext transport combined with
+`open` or `ip` trust is a legitimate contract-level combination that needs
+no certificate material on either side.
 
-The proxy, however, was built against contract v1, when mutual TLS plus
-Ed25519 signature verification was mandatory, and had not been relaxed since
-(see 0004). The reference backend (RW-HPS Go Server) defaults its trust
-strategy to `open` and serves plaintext unless server certificates are
-configured
+The proxy, however, originally always used mutual TLS toward every backend.
+The reference backend (RW-HPS Go Server) defaults its trust strategy to
+`open` and serves plaintext unless server certificates are configured
 (`/home/lnb/RW-HPS/Go-Server/internal/net/gateway/trust.go::ParseTrustMode`,
 DECISIONS D-24), so the two sides were mismatched by default: the proxy
-insisted on mTLS toward a backend that checks nothing. Author approval to
-fix this was granted 2026-11-05; contract v1.2 was issued first
-(contract-first), then this implementation followed.
+insisted on mTLS toward a backend that checks nothing. This entry records
+the fix: transport follows the backend's declared trust strategy.
 
 ## Decision
 
@@ -51,7 +46,7 @@ derives the transport:
 | `plain` | `pinned` | startup error (pinned checks TLS client-certificate fingerprints, which plaintext cannot carry) |
 
 Missing or unparseable declarations resolve to the **safest available
-transport** — TLS with a client certificate — per contract v1.2 ("Proxy
+transport** — TLS with a client certificate — per contract v1.2.1 ("Proxy
 transport selection"): the proxy fails closed and never falls back to
 plaintext silently.
 
@@ -66,21 +61,19 @@ mTLS backends still require the client certificate, key, and CA pool
 reported per backend in `/api/backends`
 (`internal/backend/client.go::Status`).
 
-**Identity semantics are unchanged.** The 24-byte `CASC` preamble is still
-written first on every game connection regardless of transport
-(`internal/proxy/server.go::handleConnection`); the proxy still signs
-Ed25519 JWTs on every bind (`internal/proxy/token.go`); only `Preregister`
-passes before a session is bound
-(`internal/proxy/session.go::backendToClient`); bind failures are still
-recorded by `logBindFailure` at error level without the JWT
-(`internal/proxy/session.go::logBindFailure`). The one-time `jti` ledger is
-the backend's and is independent of transport.
+**Identity semantics are transport-independent.** The 24-byte `CASC`
+preamble is written first on every game connection regardless of transport
+(`internal/proxy/server.go::handleConnection`); the proxy signs Ed25519
+JWTs on every bind (`internal/proxy/token.go`); only `Preregister` passes
+before a session is bound (`internal/proxy/session.go::backendToClient`);
+bind failures are recorded by `logBindFailure` at error level without the
+JWT (`internal/proxy/session.go::logBindFailure`). The one-time `jti`
+ledger is the backend's and is independent of transport.
 
-**Contract**: HA-Contract v1.2 (merge `6892fc4`, content `c7f8aff`) defines
-the selection rule, the fail-closed default, the override, and the
-plaintext consequences as proxy behavior; the OpenAPI companion was bumped
-to 1.2.0 for traceability only (no endpoint, field, or enum changes — the
-declaration is proxy-side configuration, not wire content).
+**Contract**: HA-Contract v1.2.1 defines the selection rule, the
+fail-closed default, the override, and the plaintext consequences as proxy
+behavior ("Proxy transport selection" section). The declaration is
+proxy-side configuration, not wire content.
 
 ## Consequences
 
@@ -95,21 +88,20 @@ Costs and limitations:
   README says so.
 - **The declaration is operator-maintained.** The backend does not expose
   its trust strategy at runtime (`/v1/health` returns only `backendId` and
-  `status` as of 2026-11-05), so a wrong declaration is possible. The
+  `status`), so a wrong declaration is possible. The
   fail-closed default bounds the damage: an undeclared plaintext backend is
   unreachable (visible startup/dial failure) rather than silently trusted;
-  an undeclared TLS backend works as before. A deployment whose backend
+  an undeclared TLS backend is reached over mTLS. A deployment whose backend
   serves TLS while declaring `open`/`ip` must set `tls_mode: mtls`.
-- Startup validation became scheme- and declaration-aware; error messages
-  must keep naming both fields so misconfigurations are diagnosable.
+- Startup validation is scheme- and declaration-aware; error messages name
+  both fields so misconfigurations are diagnosable.
 
 Benefits:
 
 - The two contract-valid combinations (plaintext + `open`, plaintext + `ip`)
-  are reachable; open/ip deployments no longer generate or mount client
-  certificates, keys, and CAs that the backend never checks (the Ed25519
-  signing key is still required — the proxy always signs JWTs).
-- Behavior now matches contract v1.2 and the RW-HPS Go Server defaults.
+  are reachable; open/ip deployments need no client certificates, keys, or
+  CAs (the Ed25519 signing key is required — the proxy always signs JWTs).
+- Behavior matches contract v1.2.1 and the RW-HPS Go Server defaults.
 
 ## Evidence
 
@@ -123,9 +115,9 @@ Benefits:
   `internal/backend/directory.go::Statuses` (resolved transport in
   `/api/backends`). Commits `cfa374b` (implementation), `193de11`
   (config.example.yaml, README).
-- HA-Contract repository: `docs/dev/Cascade/Cascade-Backend-v1.md` v1.2
-  ("Proxy transport selection", Changelog v1.1.1 → v1.2), merge `6892fc4`;
-  `docs/api/openapi/cascade-backend-v1.yaml` `info.version: 1.2.0`.
+- HA-Contract repository: `docs/dev/Cascade/Cascade-Backend-v1.md` v1.2.1
+  ("Proxy transport selection");
+  `docs/api/openapi/cascade-backend-v1.yaml` `info.version: 1.2.1`.
 - Tests (all `-race`): `internal/backend/transport_mode_test.go`
   (derivation table), `internal/backend/plaintext_test.go` (open/ip
   plaintext control + game + preamble with no cert material; pinned auto →
@@ -153,6 +145,5 @@ Benefits:
   (server TLS only when certificates are configured),
   `/home/lnb/RW-HPS/Go-Server/internal/app/cascade.go::loadCascadeGateway`
   (gateway assembly), README "Cascade 边缘代理模式" (D-24).
-- Cross-references: 0004 (the preamble and passthrough are unchanged; its
-  "always mutual TLS" transport statement is superseded here), 0003
-  (identity chain, transport-independent).
+- Cross-references: 0004 (preamble and passthrough), 0003 (identity chain,
+  transport-independent).
