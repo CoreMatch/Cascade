@@ -1,7 +1,6 @@
 # 0001 — Edge Proxy, Not a Game Server
 
 - **Status**: accepted
-- **Date**: 2026-11-04 (decision landed in commit `51e81b8`, 2026-10-25)
 
 ## Context
 

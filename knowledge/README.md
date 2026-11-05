@@ -25,7 +25,7 @@ conflict to the owner.
 
 Each entry is one page in ADR style:
 
-- **Status** (`accepted` / `proposed` / `superseded` / ...), **Date**
+- **Status** (`accepted` / `proposed` / `superseded` / ...)
 - **Context** — the problem and constraints
 - **Decision** — what was chosen
 - **Consequences** — including costs and limitations
@@ -34,19 +34,19 @@ Each entry is one page in ADR style:
   repository, noted as such); anything that could not be verified is marked
   "not verified". Design intent that cannot be determined from the code or
   history is listed as "pending author confirmation"; once the author
-  answers, the entry records the confirmation with its date. Do not
+  answers, the entry records the confirmation. Do not
   fabricate.
 
 ## Entries
 
-| # | Title | Status | Date |
-|---|-------|--------|------|
-| [0001](0001-edge-proxy-not-game-server.md) | Edge Proxy, Not a Game Server | accepted | 2026-11-04 |
-| [0002](0002-room-code-routing.md) | Room-Code Routing: Snapshot, Prefix, Default | accepted | 2026-11-04 |
-| [0003](0003-identity-binding-chain.md) | Identity Binding Chain: Ed25519 JWT Before Game Data | accepted | 2026-11-04 |
-| [0004](0004-mtls-casc-preamble-transport.md) | mTLS + 24-Byte CASC Preamble + Byte Passthrough | accepted | 2026-11-04 |
-| [0005](0005-hrpauth-presence-and-path-resolution.md) | HRPAuth Presence and Runtime Path Resolution | accepted | 2026-11-04 |
-| [0006](0006-plaintext-backends-unreachable.md) | Transport Follows the Backend's Declared Trust Strategy | accepted | 2026-11-05 |
+| # | Title | Status |
+|---|-------|--------|
+| [0001](0001-edge-proxy-not-game-server.md) | Edge Proxy, Not a Game Server | accepted |
+| [0002](0002-room-code-routing.md) | Room-Code Routing: Snapshot, Prefix, Default | accepted |
+| [0003](0003-identity-binding-chain.md) | Identity Binding Chain: Ed25519 JWT Before Game Data | accepted |
+| [0004](0004-mtls-casc-preamble-transport.md) | mTLS + 24-Byte CASC Preamble + Byte Passthrough | accepted |
+| [0005](0005-hrpauth-presence-and-path-resolution.md) | HRPAuth Presence and Runtime Path Resolution | accepted |
+| [0006](0006-plaintext-backends-unreachable.md) | Transport Follows the Backend's Declared Trust Strategy | accepted |
 
 Appendix (not an ADR): [plaintext-transport end-to-end test for the RW-HPS
 Go Server](appendix-plain-transport-e2e.md), parked here until it lands in

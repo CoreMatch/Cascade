@@ -1,8 +1,6 @@
 # 0005 — HRPAuth Presence and Runtime Path Resolution
 
 - **Status**: accepted
-- **Date**: 2026-11-04 (presence renewal fixed in `9dceaf6`; path
-  resolution fixed in `3b46aac`, both 2026-11-04)
 
 ## Context
 

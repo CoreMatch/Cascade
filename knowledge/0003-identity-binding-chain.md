@@ -1,7 +1,6 @@
 # 0003 — Identity Binding Chain: Ed25519 JWT Before Game Data
 
 - **Status**: accepted
-- **Date**: 2026-11-04 (introduced in commit `51e81b8`, 2026-10-25)
 
 ## Context
 

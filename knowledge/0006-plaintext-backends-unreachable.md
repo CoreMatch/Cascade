@@ -1,7 +1,6 @@
 # 0006 — Transport Follows the Backend's Declared Trust Strategy
 
 - **Status**: accepted
-- **Date**: 2026-11-05
 
 ## Context
 
