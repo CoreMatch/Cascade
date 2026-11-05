@@ -66,10 +66,9 @@ directory.
   `ErrMigrationsDirNotFound` listing every candidate path tried
   (`internal/database/migrate.go::ErrMigrationsDirNotFound`,
   `internal/database/migrate.go::RunMigrations`). Silently skipping
-  migrations would leave the database without tables (historically
-  surfacing later as "no such table: player_bindings" during identity
-  binding — commit `3b46aac`). Standalone deployments must therefore ship
-  `internal/database/migrations` (`README.md:L38`).
+  migrations would leave the database without tables. Standalone
+  deployments must therefore ship `internal/database/migrations`
+  (`README.md:L38`).
 
 ## Consequences
 
@@ -101,10 +100,9 @@ The HRPAuth contract prescribes **no default** for `ttl_seconds`: the field
 is optional, and `<= 0` or omission means "never expires" (HA-Contract
 `/home/lnb/Desktop/HA/HA-Contract/docs/api/openapi/hrpauth-business.yaml (field: ttl_seconds)`;
 `/home/lnb/Desktop/HA/HA-Contract/docs/dev/HRPAuth/microservices.md:L64`).
-**120 s therefore comes from this repository's own historical implementation
-— the value already used by the original one-shot registration
-(`9dceaf6`); it is not a contract-mandated default and not an ecosystem
-convention.** The only numerical data point in the contract repository is
+**120 s is therefore this repository's own default; it is not a
+contract-mandated default and not an ecosystem convention.** The only
+numerical data point in the contract repository is
 the registration example in
 `/home/lnb/Desktop/HA/HA-Contract/docs/dev/HRPAuth/microservices.md:L46`,
 which happens to use `"ttl_seconds": 120` — an illustrative example, not a
@@ -152,9 +150,8 @@ prescribed value.
   (repeated heartbeats keep `first_seen`, refresh `last_seen`; expired
   records are cleaned lazily on access).
 - Commits: `9dceaf6` "fix(auth): renew HRPAuth presence before its TTL
-  expires" (documents the original one-shot bug, the half-TTL cadence,
-  backoff, and the contract check for the TTL unit); `3b46aac` "fix(db):
-  resolve runtime paths next to the executable and fail loudly when
-  migrations are missing" (documents the silent table-less startup bug).
+  expires" (half-TTL cadence, backoff, and the contract check for the TTL
+  unit); `3b46aac` "fix(db): resolve runtime paths next to the executable
+  and fail loudly when migrations are missing".
 - `README.md:L38` — operator-facing path-resolution and migrations-shipping
   statement.

@@ -61,11 +61,11 @@ Contract-side obligations (HA-Contract `Cascade-Backend-v1.md`):
   same-sessionID-and-jti retry is idempotent and returns `204`
   ("Identity JWT" and "HTTP API" sections; OpenAPI
   `cascade-backend-v1.yaml`, `/sessions/{sessionID}/identity`).
-- Since contract v1.1 the backend does **not** verify the JWT signature,
-  `kid`, or `iss` — proxy authenticity is carried by the selected trust
-  strategy (see 0004). Structural claim checks remain: `alg` `EdDSA`,
-  audience equal to the backend ID, non-empty `sid`/`sub`/`jti`, `exp`
-  within 30 s of `iat`, not expired ("Identity JWT" section).
+- The backend does **not** verify the JWT signature, `kid`, or `iss` —
+  proxy authenticity is carried by the selected trust strategy (see 0004).
+  Structural claim checks remain: `alg` `EdDSA`, audience equal to the
+  backend ID, non-empty `sid`/`sub`/`jti`, `exp` within 30 s of `iat`,
+  not expired ("Identity JWT" section).
 - The JWT must not contain HA UUID, HA login state, credentials, or
   authorization policy ("Identity JWT" section).
 
@@ -93,7 +93,7 @@ Benefits:
   whose game UUID was not vouched for by the proxy on that exact session.
 - Bind failures are logged without material: only session ID, backend ID,
   and an error summary; never the JWT or key material
-  (`internal/proxy/session.go::logBindFailure`, added in commit `df0feb3`).
+  (`internal/proxy/session.go::logBindFailure`).
 
 ## Evidence
 

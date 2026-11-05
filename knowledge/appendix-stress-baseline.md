@@ -10,7 +10,7 @@ Baseline numbers for `TestConcurrentSessionBindingStress`
 the concurrent Preregister → RegisterPlayer → identity-bind stress test
 added on 2026-11-05. The test drives 256 full client sessions through the
 proxy at concurrency 32 against a fake plaintext backend (trust `open`,
-contract v1.2 transport selection) and fails if any session is lost
+contract v1.2.1 transport selection) and fails if any session is lost
 (asserted bind count and backend-side completion count both equal 256).
 
 Use these numbers as a regression reference: a materially worse run on
