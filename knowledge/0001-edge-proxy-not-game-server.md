@@ -89,9 +89,11 @@ Author disposition of the remaining items (2026-11-05, "无用的就清；能便
   the `IsAuthenticated` + binding check, now covered by tests. The DB
   `quick_auth` column is migration schema and stays untouched.
 - The `players` table (migration `000001`) and the `Player` model —
-  **kept, record only**: no code reads or writes player rows, but dropping
-  the table requires a new migration, which is a schema decision awaiting
-  author confirmation. No new migration is added until then.
+  **decided 2026-11-05: kept, deliberately** (author: "为什么要删？"). No
+  code reads or writes player rows, but the table has no design defect,
+  and dropping it would require a new migration with no clear benefit.
+  No migration will be added to remove it; this item is closed, not
+  pending.
 - Test-only protocol primitives (`Reader`/`Writer` methods, `ReadPacket`,
   `backend.ReadPreamble`) — kept: they document and verify the wire format
   and are exercised by the integration tests.
