@@ -1,7 +1,6 @@
 # Appendix — Plaintext Transport End-to-End Test (for the RW-HPS Go Server)
 
 - **Status**: appendix (not an ADR; referenced by 0006)
-- **Date**: 2026-11-05
 
 ## What this is
 

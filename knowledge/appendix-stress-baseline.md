@@ -1,7 +1,6 @@
 # Appendix — Concurrent Session Binding Stress Baseline
 
 - **Status**: appendix (not an ADR; regression baseline)
-- **Date**: 2026-11-05
 
 ## What this is
 

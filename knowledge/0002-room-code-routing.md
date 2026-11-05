@@ -1,7 +1,6 @@
 # 0002 — Room-Code Routing: Snapshot, Prefix, Default
 
 - **Status**: accepted
-- **Date**: 2026-11-04 (routing introduced in commit `51e81b8`, 2026-10-25)
 
 ## Context
 

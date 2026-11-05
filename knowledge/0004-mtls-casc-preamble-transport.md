@@ -1,7 +1,6 @@
 # 0004 — mTLS + 24-Byte CASC Preamble + Byte Passthrough
 
 - **Status**: accepted
-- **Date**: 2026-11-04 (introduced in commit `51e81b8`, 2026-10-25)
 
 ## Context
 
