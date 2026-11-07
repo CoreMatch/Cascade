@@ -63,16 +63,50 @@ func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *re
 func (s *Server) Directory() *backend.Directory { return s.directory }
 
 func (s *Server) Run(ctx context.Context) error {
+	s.directory.Start(ctx)
+
+	// Lobby jump listeners: one extra public port per backend that declares
+	// jump_port. A connection landing on a jump port routes straight to that
+	// backend regardless of the Preregister room code — this is how a vanilla
+	// client is steered from the lobby to a sub-server without the jump packet
+	// ever carrying the backend's real address.
+	for _, be := range s.cfg.Backends {
+		if be.JumpPort <= 0 {
+			continue
+		}
+		jumpAddr := fmt.Sprintf(":%d", be.JumpPort)
+		jln, err := net.Listen("tcp", jumpAddr)
+		if err != nil {
+			return err
+		}
+		s.logger.Printf("proxy jump listener for backend %s on %s", be.ID, jumpAddr)
+		go func(l net.Listener) {
+			<-ctx.Done()
+			_ = l.Close()
+		}(jln)
+		go func(l net.Listener, backendID string) {
+			if err := s.serveGame(ctx, l, backendID); err != nil {
+				s.logger.Printf("proxy jump listener for backend %s exited: %v", backendID, err)
+			}
+		}(jln, be.ID)
+	}
+
 	ln, err := net.Listen("tcp", s.cfg.GameListenAddr)
 	if err != nil {
 		return err
 	}
 	s.logger.Printf("proxy game listener started on %s", s.cfg.GameListenAddr)
-	s.directory.Start(ctx)
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
 	}()
+	return s.serveGame(ctx, ln, "")
+}
+
+// serveGame accepts game connections on ln until it closes. forcedBackendID is
+// empty for the main listener (route by Preregister room code) and a backend ID
+// for a jump listener (route straight to that backend).
+func (s *Server) serveGame(ctx context.Context, ln net.Listener, forcedBackendID string) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -87,7 +121,7 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		go func() {
 			defer s.connections.Add(-1)
-			s.handleConnection(ctx, conn)
+			s.handleConnection(ctx, conn, forcedBackendID)
 		}()
 	}
 }
@@ -139,7 +173,7 @@ func (s *Server) RoomRequest(ctx context.Context, method, code, suffix string, b
 	return client.Request(ctx, method, path, body)
 }
 
-func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn) {
+func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, forcedBackendID string) {
 	defer clientConn.Close()
 	if s.cfg.RegisterTimeoutSec > 0 {
 		_ = clientConn.SetReadDeadline(time.Now().Add(time.Duration(s.cfg.RegisterTimeoutSec) * time.Second))
@@ -151,15 +185,29 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn) {
 	if first.Type != protocol.TypePreregisterReceive {
 		return
 	}
-	info, err := protocol.DecodePreregister(first.Body)
-	if err != nil {
-		s.sendKick(clientConn, "Invalid handshake")
-		return
-	}
-	upstream, err := s.directory.RouteInitial(info.Query)
-	if err != nil {
-		s.sendKick(clientConn, "No available backend")
-		return
+
+	// Route selection. A jump-port connection (forcedBackendID != "") goes
+	// straight to its backend regardless of the room code; a main-listener
+	// connection routes by the Preregister room code as before.
+	var upstream *backend.Client
+	if forcedBackendID != "" {
+		client, ok := s.directory.Client(forcedBackendID)
+		if !ok || !s.directory.BackendHealthy(forcedBackendID) {
+			s.sendKick(clientConn, "Backend unavailable")
+			return
+		}
+		upstream = client
+	} else {
+		info, err := protocol.DecodePreregister(first.Body)
+		if err != nil {
+			s.sendKick(clientConn, "Invalid handshake")
+			return
+		}
+		upstream, err = s.directory.RouteInitial(info.Query)
+		if err != nil {
+			s.sendKick(clientConn, "No available backend")
+			return
+		}
 	}
 	sessionID, err := backend.NewSessionID()
 	if err != nil {

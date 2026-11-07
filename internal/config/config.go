@@ -27,12 +27,22 @@ type BackendConfig struct {
 	// TLSMode selects the transport toward this backend: "auto" (default,
 	// derived from TrustMode), "mtls", or "plain".
 	TLSMode string `yaml:"tls_mode" json:"tlsMode"`
+	// JumpPort, when > 0, makes the proxy listen on an extra public port that
+	// routes straight to this backend regardless of the Preregister room code.
+	// It is the landing port used by the lobby jump (PACKET_RECONNECT_TO), so a
+	// vanilla client can be steered here without exposing the backend address.
+	JumpPort int `yaml:"jump_port" json:"jumpPort"`
 }
 
 // Config holds all runtime configuration.
 type Config struct {
 	GameListenAddr           string
 	HTTPListenAddr           string
+	// PublicGameHost is the host (domain or IP) vanilla clients use to reach the
+	// proxy. It is placed into PACKET_RECONNECT_TO targets together with a
+	// backend jump port, so it must be publicly resolvable/reachable. Empty
+	// disables the lobby jump (the proxy then refuses /goto).
+	PublicGameHost string
 	DBType                   string // "sqlite" or "mysql"
 	DBPath                   string // SQLite path (used when DBType=sqlite)
 	MySQLDSN                 string // MySQL DSN (used when DBType=mysql), e.g. "user:pass@tcp(host:3306)/dbname?parseTime=true"
@@ -71,6 +81,7 @@ type fileConfig struct {
 	Version                  int             `yaml:"version"`
 	GameListenAddr           string          `yaml:"game_listen_addr"`
 	HTTPListenAddr           string          `yaml:"http_listen_addr"`
+	PublicGameHost           string          `yaml:"public_game_host"`
 	DBType                   string          `yaml:"db_type"`
 	DBPath                   string          `yaml:"db_path"`
 	MySQLDSN                 string          `yaml:"mysql_dsn"`
@@ -257,6 +268,7 @@ func fileConfigToConfig(fc fileConfig) Config {
 	cfg := Config{
 		GameListenAddr:           fc.GameListenAddr,
 		HTTPListenAddr:           fc.HTTPListenAddr,
+		PublicGameHost:           fc.PublicGameHost,
 		DBType:                   fc.DBType,
 		DBPath:                   fc.DBPath,
 		MySQLDSN:                 fc.MySQLDSN,
@@ -335,6 +347,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnv("RWGIN_HTTP_ADDR"); ok {
 		cfg.HTTPListenAddr = v
+	}
+	if v, ok := lookupEnv("RWGIN_PUBLIC_GAME_HOST"); ok {
+		cfg.PublicGameHost = v
 	}
 	if v, ok := lookupEnv("RWGIN_DB_TYPE"); ok {
 		cfg.DBType = v

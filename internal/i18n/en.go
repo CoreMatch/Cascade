@@ -36,4 +36,14 @@ var enMessages = map[string]string{
 	// --- Language ---
 	"msg.usage.lang":   "Usage: /lang <en|zh>",
 	"msg.lang_changed": "Language changed to English.",
+
+	// --- Lobby jump ---
+	"msg.usage.goto":     "Usage: /goto <room code>  (see /rooms)",
+	"msg.jump_disabled":  "Lobby jump is not configured on this proxy.",
+	"msg.goto_not_found": "No room found with code: %s",
+	"msg.goto_no_jump":   "Room %s has no jump entry configured.",
+	"msg.goto_ok":        "Jumping to %s ...",
+	"msg.rooms_empty":    "No rooms available.",
+	"msg.rooms_header":   "Rooms (join with /goto <code>):",
+	"msg.rooms_line":     "%s | %s | %d/%d players",
 }

@@ -191,7 +191,7 @@ func (s *session) handleAuthChat(ctx context.Context, body []byte) bool {
 	command := strings.ToLower(parts[0])
 	args := parts[1:]
 	switch command {
-	case "login", "claim", "whoami", "lang":
+	case "login", "claim", "whoami", "lang", "goto", "rooms":
 	default:
 		return false
 	}
@@ -209,6 +209,10 @@ func (s *session) handleAuthChat(ctx context.Context, body []byte) bool {
 		s.commandWhoAmI()
 	case "lang":
 		s.commandLang(args)
+	case "goto":
+		s.commandGoto(args)
+	case "rooms":
+		s.commandRooms()
 	}
 	return true
 }
@@ -343,6 +347,60 @@ func (s *session) commandLang(args []string) {
 		_ = s.server.db.SetLang(s.playerID, locale)
 	}
 	s.reply(i18n.T(s.locale, "msg.lang_changed"))
+}
+
+// commandGoto steers the client to another sub-server's lobby. It resolves the
+// room code to its owning backend and sends PACKET_RECONNECT_TO pointing at that
+// backend's Cascade jump port — never the backend's real address (backends stay
+// private; Cascade is the only public ingress). The vanilla client follows the
+// reconnect, and the jump-port listener routes the new connection straight to the
+// target backend regardless of the room code it (re)sends.
+func (s *session) commandGoto(args []string) {
+	if len(args) == 0 {
+		s.reply(i18n.T(s.locale, "msg.usage.goto"))
+		return
+	}
+	if strings.TrimSpace(s.server.cfg.PublicGameHost) == "" {
+		s.reply(i18n.T(s.locale, "msg.jump_disabled"))
+		return
+	}
+	code := strings.ToUpper(strings.TrimSpace(args[0]))
+	client, err := s.server.directory.RouteRoom(code)
+	if err != nil {
+		s.reply(i18n.T(s.locale, "msg.goto_not_found", args[0]))
+		return
+	}
+	jumpPort := 0
+	for _, be := range s.server.cfg.Backends {
+		if be.ID == client.ID {
+			jumpPort = be.JumpPort
+			break
+		}
+	}
+	if jumpPort <= 0 {
+		s.reply(i18n.T(s.locale, "msg.goto_no_jump", args[0]))
+		return
+	}
+	s.reply(i18n.T(s.locale, "msg.goto_ok", code))
+	target := fmt.Sprintf("%s:%d", s.server.cfg.PublicGameHost, jumpPort)
+	packet := protocol.EncodeReconnect(target)
+	s.writeMu.Lock()
+	_ = protocol.WritePacket(s.client, packet)
+	s.writeMu.Unlock()
+}
+
+// commandRooms lists the rooms currently owned by healthy backends, so a player
+// in the lobby can see which sub-servers they can /goto.
+func (s *session) commandRooms() {
+	rooms := s.server.directory.SnapshotRooms()
+	if len(rooms) == 0 {
+		s.reply(i18n.T(s.locale, "msg.rooms_empty"))
+		return
+	}
+	s.reply(i18n.T(s.locale, "msg.rooms_header"))
+	for _, room := range rooms {
+		s.reply(i18n.T(s.locale, "msg.rooms_line", room.Code, room.Title, room.Players, room.MaxPlayers))
+	}
 }
 
 func (s *session) reply(message string) {

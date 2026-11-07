@@ -15,6 +15,32 @@ func TestEncodeKick(t *testing.T) {
 	}
 }
 
+// TestEncodeReconnect 校验 178 跳转包体与上游
+// fromRelayJumpsToAnotherServerInternalPacket 布局一致:
+// byte(0) / int(3) / bool(false) / int(1) / string(target).
+func TestEncodeReconnect(t *testing.T) {
+	p := EncodeReconnect("cascade.example:5201")
+	if p.Type != TypeReconnectTo {
+		t.Fatalf("expected type %d, got %d", TypeReconnectTo, p.Type)
+	}
+	r := NewReader(p.Body)
+	if v, err := r.Byte(); err != nil || v != 0 {
+		t.Fatalf("msg-count = %d (%v), want 0", v, err)
+	}
+	if v, err := r.Int32(); err != nil || v != 3 {
+		t.Fatalf("version = %d (%v), want 3", v, err)
+	}
+	if v, err := r.Bool(); err != nil || v {
+		t.Fatalf("debug = %v (%v), want false", v, err)
+	}
+	if v, err := r.Int32(); err != nil || v != 1 {
+		t.Fatalf("for = %d (%v), want 1", v, err)
+	}
+	if v, err := r.String(); err != nil || v != "cascade.example:5201" {
+		t.Fatalf("target = %q (%v), want cascade.example:5201", v, err)
+	}
+}
+
 func TestReadPacketRawPreservesFrame(t *testing.T) {
 	packet := Packet{Type: TypeChatBroadcast, Body: []byte{0x01, 0x02, 0xff}}
 	var encoded bytes.Buffer

@@ -179,7 +179,7 @@ func TestProxyBindsRegisteredIdentityBeforeForwarding(t *testing.T) {
 	clientPeer, clientProxy := net.Pipe()
 	sessionDone := make(chan struct{})
 	go func() {
-		server.handleConnection(ctx, clientProxy)
+		server.handleConnection(ctx, clientProxy, "")
 		close(sessionDone)
 	}()
 

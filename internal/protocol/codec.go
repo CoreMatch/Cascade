@@ -258,3 +258,18 @@ func EncodeKick(reason string) Packet {
 	RequireNoError(w.String(reason))
 	return w.Packet(TypeKick)
 }
+
+// EncodeReconnect generates a PACKET_RECONNECT_TO (178) packet steering the
+// client to reconnect to the given "host:port". The body layout matches the
+// upstream fromRelayJumpsToAnotherServerInternalPacket exactly:
+// byte(0) msg-count, int(3) version, bool(false) debug, int(1) for, string target.
+// The target is a Cascade jump port, never a backend's real address.
+func EncodeReconnect(target string) Packet {
+	w := NewWriter()
+	w.Byte(0)
+	w.Int32(3)
+	w.Bool(false)
+	w.Int32(1)
+	RequireNoError(w.String(target))
+	return w.Packet(TypeReconnectTo)
+}
