@@ -37,16 +37,23 @@ facts:
       interval_seconds: 30
       retries: 3
   smoke:
-    # 部署后冒烟：/readyz 要求默认后端可用（internal/api/proxy_http.go：
-    # 后端不可用返回 503）。200 即证明"边缘→Avalon 控制面"整条链路活着，
-    # 不只是进程活着。依赖 avalon 排序保证先后。
-    - name: edge-ready
+    # 部署后冒烟：房间快照数据真的从后端流到了边缘。
+    # /api/rooms 聚合各后端经控制面 /v1/rooms 拉取的房间快照
+    # （internal/api/proxy_http.go、internal/backend/directory.go
+    # refreshSnapshots）；非空即证明"边缘→Avalon 控制面"链路在干活，
+    # 不只是两个进程各自活着。
+    # 边界（2026-11-08 隔离实测）：/readyz 在无 helper 形态下恒 503——
+    # 其判据是默认后端 Healthy（internal/backend/directory.go Ready），
+    # 而 Healthy 要求后端 /v1/health ready（游戏监听已建立），无 helper
+    # 时不可能满足。故不用 /readyz 做冒烟；接上 helper 后形态变化，
+    # 清单必须同步更新。
+    - name: edge-rooms-flow
       method: GET
-      path: /readyz
+      path: /api/rooms
       expect_status: 200
       timeout_seconds: 10
       assert:
-        contains: ready
+        json_not_empty: rooms
   depends_on:
     # backends 指向 Avalon（control_url/game_address）；default_backend_id
     # 必填（config.example.yaml）。后端不可达时 readyz 503。
