@@ -1,0 +1,91 @@
+# Cascade 部署声明（deploy-manifest v1）
+# schema 依据：HA-Services-Deployer internal/manifest/（SchemaVersion=1）
+#
+# 定位：Rusted Warfare 边缘反向代理（接收客户端连入、按房间码选后端、
+# 转发原生协议帧；README）。与 Avalon 的组合形态：Cascade 占 5123 边缘口，
+# Avalon 作为其后端（control :5125 / game :5124）。
+# 声明形态与 Avalon 一致为"无 helper"链路的边缘侧：本服务自身无开局概念，
+# 开局能力取决于后端 Avalon（无 helper 时不能开局，见 Avalon 清单）。
+manifest_version: 1
+kind: service
+project: cascade
+display_name: Cascade
+group: edge
+# 未知：仓库无版本 tag；config.go configVersion=2 是配置 schema 版本，
+# 非服务版本。
+service_version: "unknown"
+
+facts:
+  ports:
+    # 游戏 TCP 监听（RW 客户端连入）：config.example.yaml game_listen_addr ":5123"。
+    - name: game
+      port: 5123
+      exposure: public
+    # 管理/门面 HTTP：config.example.yaml http_listen_addr ":8080"
+    # （/healthz、/readyz、/api/backends、/api/rooms，README 路由摘要）。
+    - name: http
+      port: 8080
+      exposure: loopback
+  health:
+    # internal/api/proxy_http.go GET /healthz -> {"status":"ok"}；
+    # 只证明进程与 HTTP 面活着，后端链路交给冒烟（/readyz）。
+    http:
+      port_name: http
+      path: /healthz
+      expect_status: 200
+      timeout_seconds: 5
+      interval_seconds: 30
+      retries: 3
+  smoke:
+    # 部署后冒烟：/readyz 要求默认后端可用（internal/api/proxy_http.go：
+    # 后端不可用返回 503）。200 即证明"边缘→Avalon 控制面"整条链路活着，
+    # 不只是进程活着。依赖 avalon 排序保证先后。
+    - name: edge-ready
+      method: GET
+      path: /readyz
+      expect_status: 200
+      timeout_seconds: 10
+      assert:
+        contains: ready
+  depends_on:
+    # backends 指向 Avalon（control_url/game_address）；default_backend_id
+    # 必填（config.example.yaml）。后端不可达时 readyz 503。
+    - project: avalon
+      kind: required
+  migration:
+    # 无迁移机制（默认 sqlite，首启自建 data/cascade.db）。
+    mode: none
+  data_dirs:
+    # db_path: data/cascade.db（config.example.yaml 存储段）。
+    - ./data
+  config:
+    # main.go config.Load()：cwd 下 config.yaml，不存在时自动生成默认
+    # （不含后端）；配置 schema version: 2（internal/config/config.go
+    # configVersion）。组合形态要求：backends 指向 Avalon
+    # （control_url http://127.0.0.1:5125、game_address 127.0.0.1:5124），
+    # default_backend_id 与 Avalon cascadeBackendId 一致。
+    - path: config.yaml
+      template_version: "2"
+  static_assets: ""
+
+baremetal:
+  process:
+    # 纳入编排体系：进程生命周期归 Tinyvisor（作者指令：游戏侧核心组件
+    # 长期不进编排体系说不过去）。
+    manager: tinyvisor
+    tinyvisor:
+      restart_policy: unless-stopped
+      auto_start: true
+  install:
+    # 计划值（非既成事实）：生产尚未部署该服务；按既有命名习惯预定目录。
+    # 首次实际部署时以现场为准。
+    root: /www/wwwroot/casc
+    binary_name: cascade
+  artifact:
+    # 产物尚未构建：go build -o build/cascade ./cmd/cascade。
+    # 缺失时 preflight/部署会如实报缺，不静默。
+    source: local_path
+    local_path: /home/lnb/Desktop/HA/Cascade/build/cascade
+
+container:
+  enabled: false
