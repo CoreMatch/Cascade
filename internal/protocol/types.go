@@ -11,6 +11,11 @@ const (
 
 	TypePreregisterReceive = 160
 	TypePreregister        = 161
+
+	// TypeReconnectTo is the native Rusted Warfare "reconnect to another
+	// server" packet. The edge proxy sends it to steer a vanilla client from
+	// the lobby to a sub-server jump port without exposing backend addresses.
+	TypeReconnectTo = 178
 )
 
 type Packet struct {

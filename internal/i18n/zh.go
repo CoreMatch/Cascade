@@ -33,4 +33,14 @@ var zhMessages = map[string]string{
 	// --- 语言 ---
 	"msg.usage.lang":   "用法: /lang <en|zh>",
 	"msg.lang_changed": "语言已切换为中文。",
+
+	// --- 大厅跳转 ---
+	"msg.usage.goto":     "用法: /goto <房间码>  (用 /rooms 查看)",
+	"msg.jump_disabled":  "本代理未配置大厅跳转。",
+	"msg.goto_not_found": "未找到房间码为 %s 的房间",
+	"msg.goto_no_jump":   "房间 %s 未配置跳转入口。",
+	"msg.goto_ok":        "正在跳转到 %s ...",
+	"msg.rooms_empty":    "当前没有可用房间。",
+	"msg.rooms_header":   "房间列表 (用 /goto <房间码> 加入):",
+	"msg.rooms_line":     "%s | %s | %d/%d 玩家",
 }
