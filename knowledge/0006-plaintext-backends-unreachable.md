@@ -16,8 +16,9 @@ no certificate material on either side.
 The proxy, however, originally always used mutual TLS toward every backend.
 The reference backend (RW-HPS Go Server) defaults its trust strategy to
 `open` and serves plaintext unless server certificates are configured
-(`/home/lnb/RW-HPS/Go-Server/internal/net/gateway/trust.go::ParseTrustMode`,
-DECISIONS D-24), so the two sides were mismatched by default: the proxy
+(`/home/lnb/Desktop/HA/Avalon/internal/net/gateway/trust.go::ParseTrustMode`;
+the RW-HPS Go Server codebase has since been migrated to the Avalon
+repository; DECISIONS D-24), so the two sides were mismatched by default: the proxy
 insisted on mTLS toward a backend that checks nothing. This entry records
 the fix: transport follows the backend's declared trust strategy.
 
@@ -137,12 +138,12 @@ Benefits:
   here in committable form: see
   [appendix-plain-transport-e2e.md](appendix-plain-transport-e2e.md) for the
   full source, layout, and reproduction steps.
-- RW-HPS Go Server:
-  `/home/lnb/RW-HPS/Go-Server/internal/net/gateway/trust.go::ParseTrustMode`
+- RW-HPS Go Server (codebase since migrated to the Avalon repository):
+  `/home/lnb/Desktop/HA/Avalon/internal/net/gateway/trust.go::ParseTrustMode`
   (trust tiers; `""` ≡ `open`),
-  `/home/lnb/RW-HPS/Go-Server/internal/net/gateway/gateway.go::loadServerTLS`
+  `/home/lnb/Desktop/HA/Avalon/internal/net/gateway/gateway.go::loadServerTLS`
   (server TLS only when certificates are configured),
-  `/home/lnb/RW-HPS/Go-Server/internal/app/cascade.go::loadCascadeGateway`
+  `/home/lnb/Desktop/HA/Avalon/internal/app/cascade.go::loadCascadeGateway`
   (gateway assembly), README "Cascade 边缘代理模式" (D-24).
 - Cross-references: 0004 (preamble and passthrough), 0003 (identity chain,
   transport-independent).
