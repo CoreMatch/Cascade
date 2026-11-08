@@ -51,6 +51,16 @@ go run ./cmd/cascade
 
 管理面的全部错误响应使用统一信封 `{"success":false,"code":...,"message":...,"meta":{"request_id":...}}`：`code` 为 HA-Contract `docs/api/error-codes.md` 登记的 `lower_snake` 稳定码（如 `cascade_room_conflict`、`cascade_binding_not_found`），后端契约的 `UPPER_SNAKE` 稳定码（`FORBIDDEN`、`SESSION_NOT_FOUND`、`ROOM_CONFLICT` 等）连同状态码与消息原样透传。成功响应形状不变。
 
+## 大厅跳转的运维口径（/goto 与 /rooms）
+
+`/goto <房间码>` 与 `/rooms` 是**代理侧**的游戏内聊天命令，由代理直接应答（`internal/proxy/session.go::commandGoto`、`internal/proxy/session.go::commandRooms`）：`/rooms` 列出健康后端当前拥有的房间，`/goto` 把玩家导向目标房间所在后端的子服大厅。
+
+- **跳转目标恒为代理的公网口**：重连包（`PACKET_RECONNECT_TO`）写入 `public_game_host` + 目标后端的 `jump_port`（`internal/config/config.go::PublicGameHost`、`internal/config/config.go::JumpPort`），**从不下发后端真实地址**——后端保持私有，代理是唯一公网入口。`jump_port` 是代理为该后端额外监听的公开端口，落点连接无论携带什么房间码都直达该后端。
+- **后端游戏口只需对代理可达**，不需要对玩家开放；防火墙按"只有代理的 `game_listen_addr` 与跳转端口对外"来配。
+- `public_game_host` 留空即整体关闭大厅跳转（代理拒绝 `/goto`）；它必须是 vanilla 客户端可公网解析/到达的主机名或 IP。
+
+设计理由与端口方案的取舍见 `knowledge/0007-lobby-jump-port-routing.md`。
+
 ## 验证范围
 
 仓内测试覆盖配置迁移、OpenAPI YAML 解析、路由目录、按信任档推导的明文与 mTLS 控制/游戏传输、JWT 身份绑定和 RW 帧转发。它们不等同于真实客户端兼容验收。正式切换前仍需使用独立后端和真实 Rusted Warfare 客户端完成握手、入房及一局游戏，并在维护窗口切换。
