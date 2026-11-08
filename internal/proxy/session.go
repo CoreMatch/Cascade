@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,11 +46,15 @@ func (s *session) run(ctx context.Context) {
 	healthTicker := time.NewTicker(healthInterval)
 	defer healthTicker.Stop()
 	done := false
+	var firstErr error
 	for !done {
 		select {
 		case <-ctx.Done():
 			done = true
-		case <-errs:
+		case err := <-errs:
+			if firstErr == nil {
+				firstErr = err
+			}
 			done = true
 		case <-healthTicker.C:
 			if !s.server.directory.BackendHealthy(s.backendClient.ID) {
@@ -57,6 +62,10 @@ func (s *session) run(ctx context.Context) {
 				done = true
 			}
 		}
+	}
+	if firstErr != nil {
+		s.server.logger.Printf("[proxy] session %s (backend %s, player %s) ended: %v",
+			s.sessionID, s.backendClient.ID, s.playerID, firstErr)
 	}
 	cancel()
 	_ = s.client.Close()
@@ -74,6 +83,7 @@ func (s *session) clientToBackend(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		s.trace("c->b", packet.Type, len(raw))
 		if packet.Type == protocol.TypeRegisterPlayer {
 			if s.bound.Load() {
 				return errors.New("duplicate player registration packet")
@@ -105,6 +115,7 @@ func (s *session) backendToClient(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		s.trace("b->c", packet.Type, len(raw))
 		if !s.bound.Load() && packet.Type != protocol.TypePreregister {
 			return errors.New("backend sent game data before identity binding")
 		}
@@ -115,6 +126,15 @@ func (s *session) backendToClient(ctx context.Context) error {
 			return err
 		}
 	}
+}
+
+// trace 是临时 E2E 诊断: CASCADE_TRACE=1 时逐包记录方向/类型/长度.
+func (s *session) trace(dir string, ptype int32, n int) {
+	if os.Getenv("CASCADE_TRACE") == "" {
+		return
+	}
+	s.server.logger.Printf("[trace] session %s %s type=%d len=%d",
+		s.sessionID[:8], dir, ptype, n)
 }
 
 func (s *session) bindRegisteredPlayer(ctx context.Context, body []byte) error {
@@ -383,6 +403,7 @@ func (s *session) commandGoto(args []string) {
 	}
 	s.reply(i18n.T(s.locale, "msg.goto_ok", code))
 	target := fmt.Sprintf("%s:%d", s.server.cfg.PublicGameHost, jumpPort)
+	s.server.logger.Printf("[proxy] session %s goto %s -> %s", s.sessionID, code, target)
 	packet := protocol.EncodeReconnect(target)
 	s.writeMu.Lock()
 	_ = protocol.WritePacket(s.client, packet)

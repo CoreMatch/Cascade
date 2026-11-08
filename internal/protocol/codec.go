@@ -160,14 +160,26 @@ func (w *Writer) MaybeString(value string) error {
 	return w.String(value)
 }
 
+// EncodeChat generates a CHAT (141) packet. The layout must match the game
+// engine's ChatMessagePacket field-for-field (upstream netconnectprotocol):
+//
+//	string msg, byte version (3), isString sendBy, int team, int team.
+//
+// Clients parse these fields strictly in order; a missing version byte or
+// sender shifts every later read, and the client's readUTF runs past the end
+// of the packet body, killing the receive worker and dropping the connection
+// (observed live: /goto replies severed every session before the fix).
 func EncodeChat(from, message string) (Packet, error) {
 	w := NewWriter()
-	if err := w.String(from); err != nil {
-		return Packet{}, err
-	}
 	if err := w.String(message); err != nil {
 		return Packet{}, err
 	}
+	w.Byte(3)
+	if err := w.MaybeString(from); err != nil {
+		return Packet{}, err
+	}
+	w.Int32(-1)
+	w.Int32(-1)
 	return w.Packet(TypeChatBroadcast), nil
 }
 

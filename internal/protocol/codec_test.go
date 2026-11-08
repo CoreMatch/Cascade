@@ -70,13 +70,53 @@ func TestEncodeSystemMessage(t *testing.T) {
 	}
 }
 
+// TestEncodeChat 校验 141 聊天包体与引擎 ChatMessagePacket 布局一致:
+// string msg / byte version(3) / isString sendBy / int team / int team.
+// 客户端按此顺序严格解析, 缺字段会让 readUTF 越界读并断开连接.
 func TestEncodeChat(t *testing.T) {
-	p, err := EncodeChat("player1", "hello")
+	p, err := EncodeChat("SERVER", "hello")
 	if err != nil {
 		t.Fatalf("failed to encode chat: %v", err)
 	}
 	if p.Type != TypeChatBroadcast {
 		t.Errorf("expected type %d, got %d", TypeChatBroadcast, p.Type)
+	}
+	r := NewReader(p.Body)
+	if v, err := r.String(); err != nil || v != "hello" {
+		t.Fatalf("msg = %q (%v), want hello", v, err)
+	}
+	if v, err := r.Byte(); err != nil || v != 3 {
+		t.Fatalf("version = %d (%v), want 3", v, err)
+	}
+	if v, err := r.Bool(); err != nil || !v {
+		t.Fatalf("hasSender = %v (%v), want true", v, err)
+	}
+	if v, err := r.String(); err != nil || v != "SERVER" {
+		t.Fatalf("sender = %q (%v), want SERVER", v, err)
+	}
+	if v, err := r.Int32(); err != nil || v != -1 {
+		t.Fatalf("team1 = %d (%v), want -1", v, err)
+	}
+	if v, err := r.Int32(); err != nil || v != -1 {
+		t.Fatalf("team2 = %d (%v), want -1", v, err)
+	}
+}
+
+// TestEncodeChatEmptySender 校验空发送者走 isString=false 分支.
+func TestEncodeChatEmptySender(t *testing.T) {
+	p, err := EncodeChat("", "hi")
+	if err != nil {
+		t.Fatalf("failed to encode chat: %v", err)
+	}
+	r := NewReader(p.Body)
+	if v, err := r.String(); err != nil || v != "hi" {
+		t.Fatalf("msg = %q (%v), want hi", v, err)
+	}
+	if v, err := r.Byte(); err != nil || v != 3 {
+		t.Fatalf("version = %d (%v), want 3", v, err)
+	}
+	if v, err := r.Bool(); err != nil || v {
+		t.Fatalf("hasSender = %v (%v), want false", v, err)
 	}
 }
 
