@@ -31,9 +31,9 @@ Add a **jump-port** selector plus proxy-side `/goto` / `/rooms` chat commands:
 - Each backend may declare `jump_port` (`config.BackendConfig.JumpPort`). When set,
   the proxy listens on that extra public port and routes any connection landing on
   it **straight to that backend, ignoring the room code**
-  (`proxy/server.go::serveGame` + `handleConnection(forcedBackendID)`).
+  (`internal/proxy/server.go::serveGame` + `handleConnection(forcedBackendID)`).
 - The proxy intercepts chat commands `/rooms` (list rooms from the directory
-  snapshot) and `/goto <code>` (`proxy/session.go::commandRooms` / `commandGoto`),
+  snapshot) and `/goto <code>` (`internal/proxy/session.go::commandRooms` / `commandGoto`),
   the same way it already intercepts `/login` etc.
 - `/goto` resolves the room code to its backend (`Directory.RouteRoom`), then sends
   the client `PACKET_RECONNECT_TO` targeting `public_game_host:<jump_port>`
@@ -65,7 +65,8 @@ is disabled (`/goto` replies it is not configured).
 - `internal/proxy/session.go::commandGoto` / `commandRooms` — chat triggers.
 - `internal/protocol/codec.go::EncodeReconnect`, `internal/protocol/types.go::
   TypeReconnectTo` — the 178 packet.
-- `internal/config/config.go (field: jump_port, public_game_host)`.
+- `internal/config/config.go (field: jump_port)`,
+  `internal/config/config.go (field: public_game_host)`.
 - Tests: `internal/proxy/session_plaintext_test.go::TestJumpPortRoutesToForcedBackend`,
   `TestCommandGotoSendsReconnectToJumpPort`; `internal/protocol/codec_test.go::
   TestEncodeReconnect`.

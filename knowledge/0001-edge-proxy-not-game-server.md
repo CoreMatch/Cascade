@@ -58,7 +58,7 @@ Benefits:
 - Commit `51e81b8` "refactor: migrate to MCAGS-RW edge proxy setup":
   addition of the `internal/proxy/` and `internal/backend/` packages
   (verified via `git show --stat`).
-- `README.md:L3-L5` — positioning: edge reverse proxy; backends own rooms,
+- `README.md:L3-L5 fp=fbe84983` — positioning: edge reverse proxy; backends own rooms,
   lobby, and game protocol behavior; this repository does not implement or
   maintain a production backend.
 - HA-Contract repository, `docs/dev/Cascade/Cascade-Backend-v1.md`,

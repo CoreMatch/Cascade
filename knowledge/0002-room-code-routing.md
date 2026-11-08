@@ -118,5 +118,5 @@ Benefits:
   never moved), "Room snapshot" (5-second polling, snapshot authority,
   conflict rule, rebuild after restart), "Health and directory behavior"
   (probe cadence, health thresholds, no automatic reassignment).
-- `README.md:L44` — operator-facing statement of the same precedence.
+- `README.md:L44 fp=09093e6e` — operator-facing statement of the same precedence.
 - Commit `51e81b8` — introduction of `internal/backend/directory.go`.
