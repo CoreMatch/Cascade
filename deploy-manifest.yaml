@@ -96,7 +96,7 @@ baremetal:
     # 产物尚未构建：go build -o build/cascade ./cmd/cascade。
     # 缺失时 preflight/部署会如实报缺，不静默。
     source: local_path
-    local_path: /home/lnb/Desktop/HA/Cascade/build/cascade
+    local_path: build/cascade
 
 container:
   enabled: false
