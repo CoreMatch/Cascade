@@ -31,6 +31,15 @@ func locateContractOpenAPI(t *testing.T) string {
 		filepath.Join("..", "..", "HA-Contract", "openapi", "cascade-backend-v1.yaml"), // historical in-repo copy
 		filepath.Join("..", "..", "..", "HA-Contract", newLayoutRel),                    // sibling checkout of HA-Contract
 	)
+	// Common desktop layout: the HA repositories live side by side under
+	// ~/Desktop/HA (this machine's arrangement).
+	if home, err := os.UserHomeDir(); err == nil {
+		ha := filepath.Join(home, "Desktop", "HA", "HA-Contract")
+		candidates = append(candidates,
+			filepath.Join(ha, newLayoutRel),
+			filepath.Join(ha, legacyRel),
+		)
+	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
@@ -63,6 +72,9 @@ func TestOpenAPIContractParsesAndDefinesCoreEndpoints(t *testing.T) {
 		"/rooms",
 		"/sessions/{sessionID}/identity",
 		"/rooms/create",
+		// v1.3.0: 房间模组清单/文件只读端点 (客户端模组装配的前提)
+		"/rooms/{code}/mods",
+		"/rooms/{code}/mods/{file}",
 	} {
 		if _, exists := paths[path]; !exists {
 			t.Errorf("OpenAPI contract is missing %s", path)
