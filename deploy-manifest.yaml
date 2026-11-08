@@ -60,8 +60,12 @@ facts:
     - project: avalon
       kind: required
   migration:
-    # 无迁移机制（默认 sqlite，首启自建 data/cascade.db）。
-    mode: none
+    # golang-migrate 随启动自动执行（internal/database/gorm_store.go
+    # NewGORMStore -> RunMigrationsForDB）。2026-11-08 起迁移 SQL 经
+    # go:embed 编入二进制（internal/database/migrate.go migrationsFS）：
+    # 产物单文件自带全部迁移，任意工作目录可启动，不再依赖磁盘上的
+    # internal/database/migrations/ 目录（此前裸二进制因缺该目录起不来）。
+    mode: auto_on_startup
   data_dirs:
     # db_path: data/cascade.db（config.example.yaml 存储段）。
     - ./data

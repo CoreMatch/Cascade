@@ -2,31 +2,51 @@ package database
 
 import (
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
-	"strings"
-
-	"cascade/internal/paths"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/mysql"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
-	"github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
-// ErrMigrationsDirNotFound reports that no migrations directory could be
-// located. Starting without versioned migrations would leave the database
-// without tables, so callers must treat this as fatal instead of skipping.
+// ErrMigrationsDirNotFound reports that no migrations could be located.
+// Starting without versioned migrations would leave the database without
+// tables, so callers must treat this as fatal instead of skipping.
+// Since migrations are embedded into the binary (see migrationsFS), this
+// can only trigger if the embedded source is unreadable — a build defect.
 var ErrMigrationsDirNotFound = errors.New("migrations directory not found")
 
+// migrationsFS embeds the migration SQL so the artifact carries them:
+// a single self-contained binary runs migrations from any working
+// directory, with no migrations directory required next to the binary or
+// in the install root (2026-11-08: a bare binary started from an
+// arbitrary CWD failed to boot because the CWD-relative directory was
+// absent).
+//
+//go:embed migrations/sqlite/*.sql migrations/mysql/*.sql
+var migrationsFS embed.FS
+
 // RunMigrations runs database migrations using golang-migrate.
-// dbType should be "sqlite" or "mysql".
-// dsn is the database connection string.
-// migrationsDir is the path to the migrations directory.
-func RunMigrations(dbType, dsn, migrationsDir string, logger *log.Logger) error {
+// dbType should be "sqlite3" or "mysql"; dsn is the database connection
+// string. The migration source is the embedded migrationsFS (subdirectory
+// per dialect), independent of the process working directory.
+func RunMigrations(dbType, dsn string, logger *log.Logger) error {
+	var sub string
+	switch dbType {
+	case "sqlite", "sqlite3":
+		sub = "sqlite"
+	case "mysql":
+		sub = "mysql"
+	default:
+		return fmt.Errorf("unsupported database type for migrations: %s", dbType)
+	}
+
 	// Open database connection for migrations
 	db, err := sql.Open(dbType, dsn)
 	if err != nil {
@@ -41,34 +61,19 @@ func RunMigrations(dbType, dsn, migrationsDir string, logger *log.Logger) error 
 		driver, err = sqlite3.WithInstance(db, &sqlite3.Config{})
 	case "mysql":
 		driver, err = mysql.WithInstance(db, &mysql.Config{})
-	default:
-		return fmt.Errorf("unsupported database type for migrations: %s", dbType)
 	}
 	if err != nil {
 		return fmt.Errorf("create migration driver: %w", err)
 	}
 
-	// Resolve the migrations directory. Relative paths are looked up in the
-	// working directory first (source checkout / go run) and next to the
-	// executable second (standalone installs). A missing directory is an
-	// error: silently skipping would leave the database without its tables.
-	resolvedDir, ok := paths.FirstExisting(migrationsDir)
-	if !ok {
-		return fmt.Errorf("%w: tried %s", ErrMigrationsDirNotFound, strings.Join(paths.Candidates(migrationsDir), ", "))
-	}
-	absMigrationsDir, err := filepath.Abs(resolvedDir)
+	// Embedded source: migrations/<sub> inside the binary.
+	src, err := iofs.New(migrationsFS, filepath.Join("migrations", sub))
 	if err != nil {
-		return fmt.Errorf("get absolute path: %w", err)
-	}
-
-	// Create file source
-	src, err := (&file.File{}).Open("file://" + absMigrationsDir)
-	if err != nil {
-		return fmt.Errorf("open migration source: %w", err)
+		return fmt.Errorf("%w: embedded migrations/%s: %v", ErrMigrationsDirNotFound, sub, err)
 	}
 
 	// Create migrate instance
-	m, err := migrate.NewWithInstance("file", src, dbType, driver)
+	m, err := migrate.NewWithInstance("iofs", src, dbType, driver)
 	if err != nil {
 		return fmt.Errorf("create migrate instance: %w", err)
 	}
@@ -85,22 +90,10 @@ func RunMigrations(dbType, dsn, migrationsDir string, logger *log.Logger) error 
 
 // RunMigrationsForDB runs migrations for the given database configuration.
 func RunMigrationsForDB(dbType, dsn string, logger *log.Logger) error {
-	// Determine the migrations directory based on database type
-	var migrationsDir string
-	switch dbType {
-	case "sqlite", "sqlite3":
-		migrationsDir = "internal/database/migrations/sqlite"
-	case "mysql":
-		migrationsDir = "internal/database/migrations/mysql"
-	default:
-		return fmt.Errorf("unsupported database type: %s", dbType)
-	}
-
 	// Normalize dbType for the driver
 	driverType := dbType
 	if dbType == "sqlite" {
 		driverType = "sqlite3"
 	}
-
-	return RunMigrations(driverType, dsn, migrationsDir, logger)
+	return RunMigrations(driverType, dsn, logger)
 }
