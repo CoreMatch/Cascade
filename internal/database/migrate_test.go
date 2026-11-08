@@ -2,63 +2,27 @@ package database
 
 import (
 	"database/sql"
-	"errors"
 	"io"
+	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"cascade/internal/paths"
 )
 
-// stubExecutableDir points paths.ExecutableDir at dir for the duration of
-// the test, simulating a binary installed away from the source checkout.
-func stubExecutableDir(t *testing.T, dir string) {
-	t.Helper()
-	orig := paths.ExecutableDir
-	paths.ExecutableDir = func() (string, error) { return dir, nil }
-	t.Cleanup(func() { paths.ExecutableDir = orig })
-}
-
-// copySQLiteMigrations copies the migrations shipped with this package
-// (present because tests run from the package directory) into dst.
-func copySQLiteMigrations(t *testing.T, dst string) {
-	t.Helper()
-	entries, err := os.ReadDir(filepath.Join("migrations", "sqlite"))
-	if err != nil {
-		t.Fatalf("read bundled migrations: %v", err)
-	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		data, err := os.ReadFile(filepath.Join("migrations", "sqlite", entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dst, entry.Name()), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-// TestRunMigrationsResolvesFromExecutableDir covers the standalone-binary
-// deployment: the working directory differs from the executable directory
-// and only the executable directory carries the migrations.
-func TestRunMigrationsResolvesFromExecutableDir(t *testing.T) {
-	exeDir := t.TempDir()
-	copySQLiteMigrations(t, filepath.Join(exeDir, "internal", "database", "migrations", "sqlite"))
-	stubExecutableDir(t, exeDir)
-
-	// Run from a working directory that has no migrations at all.
+// TestRunMigrationsEmbeddedFromAnyDirectory is the pitfall regression:
+// a bare binary started from an arbitrary working directory must run its
+// migrations with nothing on disk — the SQL ships inside the binary.
+// (Previously migrations were resolved CWD-relative, so a deployed binary
+// without a bundled migrations directory failed to boot.)
+func TestRunMigrationsEmbeddedFromAnyDirectory(t *testing.T) {
+	// Empty CWD and empty executable dir: no migrations anywhere on disk.
 	t.Chdir(t.TempDir())
 
 	dsn := filepath.Join(t.TempDir(), "cascade.db")
 	logger := log.New(io.Discard, "", 0)
 	if err := RunMigrationsForDB("sqlite", dsn, logger); err != nil {
-		t.Fatalf("migrations failed when only the executable dir has them: %v", err)
+		t.Fatalf("migrations failed without any migrations on disk: %v", err)
 	}
 
 	db, err := sql.Open("sqlite3", dsn)
@@ -89,23 +53,37 @@ func TestRunMigrationsResolvesFromExecutableDir(t *testing.T) {
 	}
 }
 
-// TestRunMigrationsMissingDirectoryIsFatal ensures a missing migrations
-// directory aborts startup instead of silently skipping table creation.
-func TestRunMigrationsMissingDirectoryIsFatal(t *testing.T) {
-	stubExecutableDir(t, t.TempDir())
-	t.Chdir(t.TempDir())
+// TestEmbeddedMigrationsShipBothDialects guards the embed glob: both
+// dialect directories must be compiled into the binary with up-migrations
+// present. An empty embed would surface only at runtime otherwise.
+func TestEmbeddedMigrationsShipBothDialects(t *testing.T) {
+	for _, sub := range []string{"sqlite", "mysql"} {
+		entries, err := fs.ReadDir(migrationsFS, filepath.Join("migrations", sub))
+		if err != nil {
+			t.Fatalf("embedded migrations/%s unreadable: %v", sub, err)
+		}
+		ups := 0
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".up.sql") {
+				ups++
+			}
+		}
+		if ups == 0 {
+			t.Fatalf("embedded migrations/%s contains no .up.sql files", sub)
+		}
+	}
+}
 
-	dsn := filepath.Join(t.TempDir(), "cascade.db")
+// TestRunMigrationsUnsupportedType keeps the explicit refusal for unknown
+// database types (no silent skip).
+func TestRunMigrationsUnsupportedType(t *testing.T) {
 	logger := log.New(io.Discard, "", 0)
-
-	err := RunMigrationsForDB("sqlite", dsn, logger)
-	if !errors.Is(err, ErrMigrationsDirNotFound) {
-		t.Fatalf("expected ErrMigrationsDirNotFound, got: %v", err)
+	if err := RunMigrationsForDB("postgres", "dsn", logger); err == nil {
+		t.Fatal("unsupported database type must be rejected")
 	}
 
-	if _, err := NewGORMStore(DBConfig{Type: "sqlite", DSN: dsn}, logger); err == nil {
-		t.Fatal("NewGORMStore must refuse to start without a migrations directory")
-	} else if !strings.Contains(err.Error(), "migrations") {
-		t.Fatalf("startup error should point at migrations, got: %v", err)
+	// NewGORMStore must surface the refusal as a startup failure.
+	if _, err := NewGORMStore(DBConfig{Type: "postgres", DSN: "dsn"}, logger); err == nil {
+		t.Fatal("NewGORMStore must refuse an unsupported database type")
 	}
 }

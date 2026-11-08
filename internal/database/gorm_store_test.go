@@ -23,7 +23,7 @@ func TestMigratedSchemaSurvivesAutoMigrate(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "cascade.db")
 	logger := log.New(io.Discard, "", 0)
 
-	if err := RunMigrations("sqlite3", dsn, "migrations/sqlite", logger); err != nil {
+	if err := RunMigrations("sqlite3", dsn, logger); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func migratedTestStore(t *testing.T) *GORMStore {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "cascade.db")
 	logger := log.New(io.Discard, "", 0)
-	if err := RunMigrations("sqlite3", dsn, "migrations/sqlite", logger); err != nil {
+	if err := RunMigrations("sqlite3", dsn, logger); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
