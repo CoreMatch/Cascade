@@ -1,5 +1,5 @@
 # Cascade 部署声明（deploy-manifest v1）
-# schema 依据：HA-Services-Deployer internal/manifest/（SchemaVersion=1）
+# schema 依据：HA-Cupbearer internal/manifest/（SchemaVersion=1）
 #
 # 定位：Rusted Warfare 边缘反向代理（接收客户端连入、按房间码选后端、
 # 转发原生协议帧；README）。与 Avalon 的组合形态：Cascade 占 5123 边缘口，
