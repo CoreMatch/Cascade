@@ -12,12 +12,14 @@ import (
 	"cascade/internal/auth"
 	"cascade/internal/backend"
 	"cascade/internal/database"
+	"cascade/internal/plugin"
 )
 
 type ProxyService interface {
 	Ready() bool
 	Rooms() []backend.Room
 	BackendStatuses() []backend.Status
+	PluginStatuses() []plugin.PluginStatus
 	CreateRoom(context.Context, string, any) ([]byte, int, error)
 	RoomRequest(context.Context, string, string, string, any) ([]byte, int, error)
 }
@@ -45,6 +47,13 @@ func ProxyRouter(server ProxyService, authClient *auth.Client, db database.Store
 	})
 	engine.GET("/api/backends", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"backends": server.BackendStatuses()})
+	})
+	engine.GET("/api/plugins", func(c *gin.Context) {
+		plugins := server.PluginStatuses()
+		if plugins == nil {
+			plugins = []plugin.PluginStatus{}
+		}
+		c.JSON(http.StatusOK, gin.H{"plugins": plugins})
 	})
 	engine.GET("/api/rooms", func(c *gin.Context) {
 		rooms := server.Rooms()

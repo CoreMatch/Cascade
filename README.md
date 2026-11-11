@@ -46,6 +46,7 @@ go run ./cmd/cascade
 - `GET /healthz`：进程存活状态。
 - `GET /readyz`：默认后端就绪状态。
 - `GET /api/backends`：后端健康、快照、房间归属冲突和每个后端解析出的传输方式（`mtls`/`plain`）。
+- `GET /api/plugins`：进程外插件状态快照（`{"plugins": [...]}`，含启用/就绪/协商事件/投递计数；字段名由契约 `cascade-proxy.yaml` 锁定）。
 - `GET /api/rooms` 及原有 `/api/rooms` 管理路径：代理门面，操作转发给房间所属后端。
 - 原有 `/api/auth/*` 与 `/internal/*` 接口继续由代理处理。
 

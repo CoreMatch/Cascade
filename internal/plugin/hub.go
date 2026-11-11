@@ -601,23 +601,26 @@ func (h *Hub) enqueueEvent(eventName, eventID, body string) {
 
 // --- 运维可见性 ---
 
-// PluginStatus 是单个插件的只读状态快照
+// PluginStatus 是单个插件的只读状态快照。JSON 字段名由契约锁定
+// （HA-Contract cascade-proxy.yaml schemas.PluginStatus，camelCase），
+// 序列化键集合的对齐测试见 hub_test.go::TestPluginStatusJSONContract。
 type PluginStatus struct {
-	Name            string
-	BaseURL         string
-	Enabled         bool
-	Ready           bool
-	ManifestID      string
-	ManifestVersion string
-	Events          []string
-	Queued          int
-	Delivered       int64
-	Dropped         int64
-	Denied          int64
-	FailOpen        int64
+	Name            string   `json:"name"`
+	BaseURL         string   `json:"baseUrl"`
+	Enabled         bool     `json:"enabled"`
+	Ready           bool     `json:"ready"`
+	ManifestID      string   `json:"manifestId"`
+	ManifestVersion string   `json:"manifestVersion"`
+	Events          []string `json:"events"`
+	Queued          int      `json:"queued"`
+	Delivered       int64    `json:"delivered"`
+	Dropped         int64    `json:"dropped"`
+	Denied          int64    `json:"denied"`
+	FailOpen        int64    `json:"failOpen"`
 }
 
-// Status 返回全部插件（含停用）的状态快照，按配置顺序
+// Status 返回全部插件（含停用）的状态快照，按配置顺序。
+// 契约面：GET /api/plugins 的数据源（cascade-proxy.yaml /api/plugins）。
 func (h *Hub) Status() []PluginStatus {
 	out := make([]PluginStatus, 0, len(h.plugins))
 	for _, p := range h.plugins {
@@ -636,11 +639,13 @@ func (h *Hub) Status() []PluginStatus {
 			st.ManifestID = m.ID
 			st.ManifestVersion = m.Version
 		}
+		events := make([]string, 0, len(allEventNames))
 		for _, name := range allEventNames {
 			if _, ok := p.negotiatedFor(name); ok {
-				st.Events = append(st.Events, name)
+				events = append(events, name)
 			}
 		}
+		st.Events = events
 		out = append(out, st)
 	}
 	return out

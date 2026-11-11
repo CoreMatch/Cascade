@@ -581,6 +581,32 @@ func TestManifestValidation(t *testing.T) {
 	}
 }
 
+// TestPluginStatusJSONContract 字段级防线：PluginStatus 的序列化键集合必须
+// 与契约（HA-Contract cascade-proxy.yaml schemas.PluginStatus）锁定的
+// camelCase 完全一致——多键、少键、改名都在此拦截。
+func TestPluginStatusJSONContract(t *testing.T) {
+	body, err := json.Marshal(PluginStatus{Events: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"name", "baseUrl", "enabled", "ready", "manifestId", "manifestVersion",
+		"events", "queued", "delivered", "dropped", "denied", "failOpen",
+	}
+	if len(decoded) != len(want) {
+		t.Fatalf("key count = %d, want %d: %v", len(decoded), len(want), decoded)
+	}
+	for _, key := range want {
+		if _, ok := decoded[key]; !ok {
+			t.Errorf("contract key %q missing from %v", key, decoded)
+		}
+	}
+}
+
 func TestSanitizeReason(t *testing.T) {
 	if got := sanitizeReason("  维护\x00中 "); got != "维护中" {
 		t.Errorf("sanitize = %q", got)

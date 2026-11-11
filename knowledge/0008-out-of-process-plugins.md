@@ -20,8 +20,9 @@ Cascade-specific facts that shape the design:
   failure must never wedge a player (the lobby is always a valid fallback).
 - Assignment routing (MCA) already produces a decision point right before
   the 178 jump — the natural veto seam.
-- Cascade has no console; observability is logs (the HTTP surface is under
-  the `cascade-proxy.yaml` contract, so no new endpoint was added here).
+- Cascade has no console; observability is logs plus the read-only
+  `GET /api/plugins` status endpoint (contract-registered in
+  `cascade-proxy.yaml` before implementation, contract-first).
 
 ## Decision
 
@@ -86,7 +87,11 @@ Payloads: `internal/plugin/event.go::PlayerInfo`, `internal/plugin/event.go::Rou
   localized reason); allowed decisions additionally get an observe copy
   (same `eventId`) and `player.routed` after the jump packet is written.
 - Plugin state reaches the hub via `internal/app/app.go` (`pluginsHub`);
-  shutdown prints per-plugin counters (`Hub.Close`).
+  shutdown prints per-plugin counters (`Hub.Close`). Live status is exposed
+  read-only at `GET /api/plugins` (`internal/api/proxy_http.go`, data source
+  `internal/plugin/hub.go::Status`; JSON keys locked by the contract schema
+  `PluginStatus`, guarded by
+  `internal/plugin/hub_test.go::TestPluginStatusJSONContract`).
 
 ## Consequences
 
@@ -96,10 +101,11 @@ Payloads: `internal/plugin/event.go::PlayerInfo`, `internal/plugin/event.go::Rou
   crash / timeout / deny).
 - The in-process MCA router stays the decision producer; plugins participate
   at the decision boundary (veto/observe), not inside the query path.
-- Observability is log-based until `HA-Contract` registers a status endpoint
-  (the `cascade-proxy.yaml` surface is contract-gated; adding `/api/plugins`
-  requires contract registration first — tracked as a gap, not silently
-  bypassed).
+- Observability: `[plugin]` logs plus `GET /api/plugins` (contract
+  `cascade-proxy.yaml` path `/api/plugins`, schema `PluginStatus`). The
+  route was contract-registered first and carried as a planned endpoint
+  until implementation landed; the contract-side "planned endpoint"
+  exemption can be withdrawn now that the route is served.
 - Contract registration: `cascade-plugin-v1` belongs in HA-Contract next to
   `avalon-plugin-v1.yaml` [xref]; until then `docs/plugins/` is the
   authoritative field-level spec.
