@@ -43,4 +43,12 @@ var zhMessages = map[string]string{
 	"msg.rooms_empty":    "当前没有可用房间。",
 	"msg.rooms_header":   "房间列表 (用 /goto <房间码> 加入):",
 	"msg.rooms_line":     "%s | %s | %d/%d 玩家",
+
+	// --- MCA 对局路由 (按成局分配转向, 复用 /goto 的跳转机制) ---
+	"msg.route_ok":             "匹配成功！正在送你进入对局服务器...",
+	"msg.route_no_room":        "当前对局暂无可用房间，你留在大厅，请稍后再试。",
+	"msg.route_no_target":      "匹配成功，但未提供游戏服务器地址，请联系管理员。",
+	"msg.route_unknown_target": "匹配成功，但代理未配置对应的游戏服务器，请联系管理员。",
+	"msg.route_target_unready": "无法进入对局：目标服务器未就绪，请稍后重试。",
+	"msg.route_no_jump":        "无法进入对局：目标服务器未配置跳转入口，请联系管理员。",
 }

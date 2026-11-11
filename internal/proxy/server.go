@@ -34,6 +34,9 @@ type Server struct {
 	auth        *auth.Client
 	directory   *backend.Directory
 	signer      *tokenSigner
+	// mcaRouter steers authenticated lobby players to their MCA formed-match
+	// backend; nil when the mca config block is disabled (zero regression).
+	mcaRouter   matchRouter
 	connections atomic.Int32
 }
 
@@ -50,14 +53,31 @@ func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *re
 	if rdb != nil {
 		cache = rdb
 	}
+	router, err := newMCARouter(cfg, directory, logger)
+	if err != nil {
+		return nil, fmt.Errorf("mca routing: %w", err)
+	}
 	server := &Server{
 		cfg: cfg, logger: logger, db: db, rdb: cache, auth: authClient,
-		directory: directory, signer: signer,
+		directory: directory, signer: signer, mcaRouter: router,
 	}
 	if err := server.validate(); err != nil {
 		return nil, err
 	}
 	return server, nil
+}
+
+// jumpPortFor returns the configured public jump port of a backend (0 when
+// the backend has no jump entry). Used by /goto and by MCA assignment
+// routing — both steer clients through the proxy's own jump ports so backend
+// addresses stay private.
+func (s *Server) jumpPortFor(backendID string) int {
+	for _, be := range s.cfg.Backends {
+		if be.ID == backendID {
+			return be.JumpPort
+		}
+	}
+	return 0
 }
 
 func (s *Server) Directory() *backend.Directory { return s.directory }

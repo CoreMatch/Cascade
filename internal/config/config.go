@@ -15,6 +15,30 @@ const (
 	configFilePath = "config.yaml"
 )
 
+// MCATargetConfig maps one MCA join_target ("host:port" of a sub-server) to
+// the proxy backend ID that serves it. The mapping lives in configuration
+// (not code) so adding/removing sub-servers never requires a rebuild.
+type MCATargetConfig struct {
+	Target  string `yaml:"target" json:"target"`
+	Backend string `yaml:"backend" json:"backend"`
+}
+
+// MCAConfig controls MatchCore Arena assignment routing (plugin body:
+// CoreMatch/MCA-Cascade). After a player's identity is bound and they sit on
+// the default (lobby) backend, the proxy queries MCA once for a formed-match
+// assignment and steers the player to the assigned sub-server via the same
+// PACKET_RECONNECT_TO + jump_port mechanism as /goto.
+//
+// Enabled=false (the zero value) disables the feature completely: no query,
+// no routing, behavior identical to before the feature existed.
+type MCAConfig struct {
+	Enabled          bool              `yaml:"enabled" json:"enabled"`
+	BaseURL          string            `yaml:"base_url" json:"baseUrl"`
+	Token            string            `yaml:"token" json:"-"` // OPS service token; never serialized or logged
+	QueryTimeoutMSec int               `yaml:"query_timeout_ms" json:"queryTimeoutMs"`
+	Targets          []MCATargetConfig `yaml:"targets" json:"targets"`
+}
+
 type BackendConfig struct {
 	ID          string   `yaml:"id" json:"id"`
 	ControlURL  string   `yaml:"control_url" json:"controlUrl"`
@@ -71,6 +95,7 @@ type Config struct {
 	HealthIntervalSec        int
 	RoomSnapshotIntervalSec  int
 	PendingSessionTimeoutSec int
+	MCA                      MCAConfig
 }
 
 // fileConfig mirrors the YAML structure, with a Version field for migration.
@@ -110,6 +135,7 @@ type fileConfig struct {
 	HealthIntervalSec        int             `yaml:"health_interval_sec"`
 	RoomSnapshotIntervalSec  int             `yaml:"room_snapshot_interval_sec"`
 	PendingSessionTimeoutSec int             `yaml:"pending_session_timeout_sec"`
+	MCA                      MCAConfig       `yaml:"mca"`
 }
 
 // Load reads config.yaml (creating/migrating as needed), then overlays env vars.
@@ -297,6 +323,7 @@ func fileConfigToConfig(fc fileConfig) Config {
 		HealthIntervalSec:        fc.HealthIntervalSec,
 		RoomSnapshotIntervalSec:  fc.RoomSnapshotIntervalSec,
 		PendingSessionTimeoutSec: fc.PendingSessionTimeoutSec,
+		MCA:                      fc.MCA,
 	}
 	// Apply defaults for zero-valued string fields
 	if cfg.GameListenAddr == "" {
@@ -410,6 +437,18 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v, ok := lookupEnv("RWGIN_PROXY_ISSUER"); ok {
 		cfg.ProxyIssuer = v
+	}
+	if v, ok := lookupEnv("RWGIN_MCA_ENABLED"); ok {
+		cfg.MCA.Enabled = v == "true" || v == "1"
+	}
+	if v, ok := lookupEnv("RWGIN_MCA_BASE_URL"); ok {
+		cfg.MCA.BaseURL = v
+	}
+	if v, ok := lookupEnv("RWGIN_MCA_TOKEN"); ok {
+		cfg.MCA.Token = v
+	}
+	if v, ok := lookupEnvInt("RWGIN_MCA_QUERY_TIMEOUT_MS"); ok {
+		cfg.MCA.QueryTimeoutMSec = v
 	}
 }
 

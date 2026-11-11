@@ -3,6 +3,7 @@ module cascade
 go 1.26.10
 
 require (
+	github.com/CoreMatch/MCA-Cascade v0.0.0-20261111152436-2a04f514c395
 	github.com/gin-gonic/gin v1.12.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-migrate/migrate/v4 v4.20.1

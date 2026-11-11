@@ -46,4 +46,12 @@ var enMessages = map[string]string{
 	"msg.rooms_empty":    "No rooms available.",
 	"msg.rooms_header":   "Rooms (join with /goto <code>):",
 	"msg.rooms_line":     "%s | %s | %d/%d players",
+
+	// --- MCA match routing (assignment-driven, same jump mechanism as /goto) ---
+	"msg.route_ok":             "Match found! Sending you to the game server...",
+	"msg.route_no_room":        "Your match has no available room right now, you stay in the lobby. Please try again later.",
+	"msg.route_no_target":      "Match found, but no game server address was provided. Please contact an administrator.",
+	"msg.route_unknown_target": "Match found, but the proxy has no configuration for the target game server. Please contact an administrator.",
+	"msg.route_target_unready": "Cannot enter the match: the target server is not ready. Please try again later.",
+	"msg.route_no_jump":        "Cannot enter the match: the target server has no jump entry configured. Please contact an administrator.",
 }

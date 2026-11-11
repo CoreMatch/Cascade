@@ -90,3 +90,24 @@ backend_ca_pool: "/run/secrets/backend-ca.pem"        # 用于校验后端服务
 health_interval_sec: 5
 room_snapshot_interval_sec: 5
 pending_session_timeout_sec: 5
+
+# --- MCA 对局路由（可选；插件本体 CoreMatch/MCA-Cascade） ---
+# 玩家身份绑定后若位于默认后端（大厅），代理按玩家绑定的 HRPAuth 账号
+# UUID 向 MatchCore Arena 查一次成局分配：有成局且可映射 -> 复用 /goto 的
+# PACKET_RECONNECT_TO + jump_port 机制送往对应后端；其余情况一律留在大厅。
+# 游客（未 /login 或 /claim）没有可查询身份，永远留在大厅。
+# 失败兜底：MCA 超时/不可达 -> 静默留大厅（仅日志）；无分配 -> 静默留大厅；
+# 无可用房间(no_room_available) -> 留大厅并给玩家可读原因；目标未登记/
+# 不健康/无跳转口 -> 留大厅并给玩家对应提示。绝不卡住玩家。
+#
+# enabled: false（默认）时本节完全无效，代理行为与未启用时逐字节一致。
+# enabled: true 但 base_url/token 缺失或 targets 指向未配置后端时，
+# 代理拒绝启动（显式失败，不静默降级）。
+mca:
+  enabled: false
+  base_url: "https://arena.mcnb.dev"      # MCA 服务地址
+  token: ""                               # OPS 服务令牌（MCA tokens.yaml），Bearer 方式，勿写入日志
+  query_timeout_ms: 2500                  # 单次分配查询超时；慢查询只延迟转向，不阻塞会话
+  targets:                                # join_target(host:port) -> 后端 ID 映射
+    # - target: "10.0.0.5:5124"           # MCA 成局携带的子服地址（host 大小写不敏感）
+    #   backend: "backend-b"              # 必须是上方 backends 中已登记的 id
