@@ -47,6 +47,8 @@ Each entry is one page in ADR style:
 | [0004](0004-mtls-casc-preamble-transport.md) | mTLS + 24-Byte CASC Preamble + Byte Passthrough | accepted |
 | [0005](0005-hrpauth-presence-and-path-resolution.md) | HRPAuth Presence and Runtime Path Resolution | accepted |
 | [0006](0006-plaintext-backends-unreachable.md) | Transport Follows the Backend's Declared Trust Strategy | accepted |
+| [0007](0007-lobby-jump-port-routing.md) | Lobby Jump: Port Routing, Not Backend Addresses | accepted |
+| [0008](0008-out-of-process-plugins.md) | Out-of-Process Plugins (cascade-plugin/v1) | accepted |
 
 Appendix (not an ADR): [plaintext-transport end-to-end test for the RW-HPS
 Go Server](appendix-plain-transport-e2e.md), parked here until it lands in

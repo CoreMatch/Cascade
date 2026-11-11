@@ -12,10 +12,12 @@ Avalon 的进程外插件系统（`avalon-plugin/v1`）同构，便于互相借�
 
 | 文件 | 内容 |
 |---|---|
+| [GETTING-STARTED.md](GETTING-STARTED.md) | 从零到一个真实收事件的插件（含故障演练与常见错误速查） |
 | [EVENT-CATALOG.md](EVENT-CATALOG.md) | 事件名、载荷字段、档位（契约正文） |
 | [AUTH-AND-NEGOTIATION.md](AUTH-AND-NEGOTIATION.md) | 双向 HMAC 签名与 manifest 协商 |
 | [FAILURE-MODES.md](FAILURE-MODES.md) | 每类失败的确定行为（插件永不卡住主链路） |
-| [template/](template/) | route-watcher 参考实现（Go 标准库，可整体拷出） |
+| [NON-GOALS.md](NON-GOALS.md) | v1 明确不做的事（边界是决定，不是遗漏） |
+| [template/](template/) | route-watcher 参考实现（Go 标准库，可整体拷出，含自测试） |
 
 ## 快速上手
 
