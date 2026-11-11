@@ -18,8 +18,9 @@ import (
 	"unicode"
 )
 
-// 退避参数（与 Avalon ADR-0006 一致）
-const (
+// 退避参数（与 Avalon ADR-0006 一致）。声明为 var 仅为测试可注入
+// （测试换成毫秒级以等待重协商），生产取值不变。
+var (
 	initialManifestBackoff = 5 * time.Second
 	maxManifestBackoff     = 5 * time.Minute
 )
