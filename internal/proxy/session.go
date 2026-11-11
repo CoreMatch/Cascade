@@ -31,6 +31,10 @@ type session struct {
 	locale        string
 	chatMessages  []time.Time
 	bound         atomic.Bool
+	// routeOnce guarantees the MCA assignment query runs at most once per
+	// session even though it can be triggered from two places (identity
+	// binding with restored auth, and a successful /login or /claim).
+	routeOnce atomic.Bool
 }
 
 func (s *session) run(ctx context.Context) {
@@ -94,6 +98,7 @@ func (s *session) clientToBackend(ctx context.Context) error {
 				return err
 			}
 			s.bound.Store(true)
+			s.maybeRouteToMatch(ctx)
 		} else if !s.bound.Load() {
 			return errors.New("client sent game data before identity binding")
 		}
@@ -289,6 +294,7 @@ func (s *session) commandLogin(ctx context.Context, args []string) {
 		_ = s.server.rdb.SetAuthenticated(s.playerID, user.UUID, 24*time.Hour)
 	}
 	s.reply(i18n.T(s.locale, "msg.auth_success", user.Username))
+	s.maybeRouteToMatch(ctx)
 }
 
 func (s *session) commandClaim(ctx context.Context, args []string) {
@@ -334,6 +340,7 @@ func (s *session) commandClaim(ctx context.Context, args []string) {
 	s.reply(i18n.T(s.locale, "msg.claim_success"))
 	s.reply(i18n.T(s.locale, "msg.claim_email", email))
 	s.reply(i18n.T(s.locale, "msg.claim_remember"))
+	s.maybeRouteToMatch(ctx)
 }
 
 func (s *session) commandWhoAmI() {
@@ -390,13 +397,7 @@ func (s *session) commandGoto(args []string) {
 		s.reply(i18n.T(s.locale, "msg.goto_not_found", args[0]))
 		return
 	}
-	jumpPort := 0
-	for _, be := range s.server.cfg.Backends {
-		if be.ID == client.ID {
-			jumpPort = be.JumpPort
-			break
-		}
-	}
+	jumpPort := s.server.jumpPortFor(client.ID)
 	if jumpPort <= 0 {
 		s.reply(i18n.T(s.locale, "msg.goto_no_jump", args[0]))
 		return
