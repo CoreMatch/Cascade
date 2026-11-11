@@ -28,6 +28,7 @@ import (
 	"cascade/internal/backend"
 	"cascade/internal/config"
 	"cascade/internal/i18n"
+	"cascade/internal/plugin"
 	"cascade/internal/protocol"
 
 	mcacascade "github.com/CoreMatch/MCA-Cascade"
@@ -172,11 +173,35 @@ func (s *session) applyMatchDecision(d mcacascade.Decision, locale string) {
 			s.sessionID, s.playerID, d.JoinTarget)
 		s.reply(i18n.T(locale, "msg.route_unknown_target"))
 	case mcacascade.OutcomeRoute:
-		s.routeToBackend(d, locale)
+		s.routeWithAdmission(d, locale)
 	default:
 		logger.Printf("[mca] WARN session %s player %s: unknown outcome %v, staying in lobby",
 			s.sessionID, s.playerID, d.Outcome)
 	}
+}
+
+// routeWithAdmission consults out-of-process plugins (player.route, veto
+// tier) before steering the player. Any granted plugin may deny the route;
+// every other failure mode fails open (the MCA decision stands), so plugins
+// can never wedge the routing chain.
+func (s *session) routeWithAdmission(d mcacascade.Decision, locale string) {
+	if hub := s.server.plugins; hub != nil && !hub.Empty() {
+		verdict := hub.AdmitPlayerRoute(s.pluginPlayerInfo(), s.backendClient.ID, plugin.RouteDecision{
+			Source:     "mca",
+			BackendID:  d.BackendID,
+			JoinTarget: d.JoinTarget,
+			GroupID:    d.GroupID,
+			MatchType:  d.MatchType,
+			TeamID:     d.TeamID,
+		})
+		if !verdict.Allowed {
+			s.server.logger.Printf("[mca] session %s player %s: route to %s vetoed by plugin %s (%s), staying in lobby",
+				s.sessionID, s.playerID, d.BackendID, verdict.Plugin, verdict.Reason)
+			s.reply(i18n.T(locale, "msg.route_denied", verdict.Reason))
+			return
+		}
+	}
+	s.routeToBackend(d, locale)
 }
 
 // routeToBackend performs the runtime gates the library cannot know about
@@ -217,6 +242,9 @@ func (s *session) routeToBackend(d mcacascade.Decision, locale string) {
 	s.reply(i18n.T(locale, "msg.route_ok"))
 	packet := protocol.EncodeReconnect(target)
 	s.writeMu.Lock()
-	_ = protocol.WritePacket(s.client, packet)
+	writeErr := protocol.WritePacket(s.client, packet)
 	s.writeMu.Unlock()
+	if writeErr == nil && s.server.plugins != nil {
+		s.server.plugins.EmitPlayerRouted(s.pluginPlayerInfo(), backendID, target)
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"cascade/internal/backend"
 	"cascade/internal/config"
 	"cascade/internal/database"
+	"cascade/internal/plugin"
 	"cascade/internal/protocol"
 	"cascade/internal/redis"
 )
@@ -27,20 +28,24 @@ type authCache interface {
 }
 
 type Server struct {
-	cfg         config.Config
-	logger      *log.Logger
-	db          database.Store
-	rdb         authCache
-	auth        *auth.Client
-	directory   *backend.Directory
-	signer      *tokenSigner
+	cfg       config.Config
+	logger    *log.Logger
+	db        database.Store
+	rdb       authCache
+	auth      *auth.Client
+	directory *backend.Directory
+	signer    *tokenSigner
 	// mcaRouter steers authenticated lobby players to their MCA formed-match
 	// backend; nil when the mca config block is disabled (zero regression).
-	mcaRouter   matchRouter
+	mcaRouter matchRouter
+	// plugins is the out-of-process plugin hub (Plugins.json); nil when no
+	// manifest could be loaded is a startup error, an empty manifest yields a
+	// hub that does nothing (zero regression).
+	plugins     *plugin.Hub
 	connections atomic.Int32
 }
 
-func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *redis.Client, authClient *auth.Client) (*Server, error) {
+func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *redis.Client, authClient *auth.Client, plugins *plugin.Hub) (*Server, error) {
 	directory, err := backend.NewDirectory(cfg)
 	if err != nil {
 		return nil, err
@@ -59,7 +64,7 @@ func NewServer(cfg config.Config, logger *log.Logger, db database.Store, rdb *re
 	}
 	server := &Server{
 		cfg: cfg, logger: logger, db: db, rdb: cache, auth: authClient,
-		directory: directory, signer: signer, mcaRouter: router,
+		directory: directory, signer: signer, mcaRouter: router, plugins: plugins,
 	}
 	if err := server.validate(); err != nil {
 		return nil, err

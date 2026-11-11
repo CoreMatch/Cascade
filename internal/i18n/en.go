@@ -54,4 +54,5 @@ var enMessages = map[string]string{
 	"msg.route_unknown_target": "Match found, but the proxy has no configuration for the target game server. Please contact an administrator.",
 	"msg.route_target_unready": "Cannot enter the match: the target server is not ready. Please try again later.",
 	"msg.route_no_jump":        "Cannot enter the match: the target server has no jump entry configured. Please contact an administrator.",
+	"msg.route_denied":         "Cannot enter the match: %s",
 }

@@ -16,6 +16,7 @@ import (
 	"cascade/internal/config"
 	"cascade/internal/database"
 	"cascade/internal/paths"
+	"cascade/internal/plugin"
 	"cascade/internal/proxy"
 	"cascade/internal/redis"
 )
@@ -26,6 +27,7 @@ type App struct {
 	db          database.Store
 	rdb         *redis.Client
 	authClient  *auth.Client
+	pluginsHub  *plugin.Hub
 	proxyServer *proxy.Server
 	httpServer  *http.Server
 	sdkFS       embed.FS
@@ -86,7 +88,23 @@ func New(cfg config.Config, logger *log.Logger, sdkFS embed.FS) *App {
 		}
 	}
 
-	proxyServer, err := proxy.NewServer(cfg, logger, db, rdb, authClient)
+	// Out-of-process plugin hub (Plugins.json). A missing/empty manifest
+	// yields an idle hub (zero regression); an invalid one is a startup error.
+	pluginCfg, pluginPath, err := plugin.LoadConfigFile()
+	if err != nil {
+		logger.Fatalf("failed to load plugin manifest: %v", err)
+	}
+	pluginsHub, err := plugin.New(pluginCfg, plugin.ProxyInfo{
+		ProxyID:     cfg.ProxyIssuer,
+		PublicHost:  cfg.PublicGameHost,
+		HostVersion: plugin.HostVersion,
+	}, logger)
+	if err != nil {
+		logger.Fatalf("failed to initialize plugin hub: %v", err)
+	}
+	logger.Printf("[plugin] manifest %s loaded (%d entries)", pluginPath, len(pluginCfg.Entries))
+
+	proxyServer, err := proxy.NewServer(cfg, logger, db, rdb, authClient, pluginsHub)
 	if err != nil {
 		logger.Fatalf("failed to initialize proxy: %v", err)
 	}
@@ -101,6 +119,7 @@ func New(cfg config.Config, logger *log.Logger, sdkFS embed.FS) *App {
 		db:          db,
 		rdb:         rdb,
 		authClient:  authClient,
+		pluginsHub:  pluginsHub,
 		proxyServer: proxyServer,
 		httpServer:  httpServer,
 		sdkFS:       sdkFS,
@@ -108,6 +127,7 @@ func New(cfg config.Config, logger *log.Logger, sdkFS embed.FS) *App {
 }
 
 func (a *App) Run(ctx context.Context) error {
+	defer a.pluginsHub.Close()
 	errCh := make(chan error, 2)
 
 	// Register with HRPAuth Core and upload SDK (non-blocking)
