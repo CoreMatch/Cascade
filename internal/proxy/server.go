@@ -87,6 +87,15 @@ func (s *Server) jumpPortFor(backendID string) int {
 
 func (s *Server) Directory() *backend.Directory { return s.directory }
 
+// PluginStatuses 返回进程外插件的状态快照（/api/plugins 的数据源）。
+// 无 hub（测试形态）时返回空切片，端点形状保持 {"plugins": []}。
+func (s *Server) PluginStatuses() []plugin.PluginStatus {
+	if s.plugins == nil {
+		return []plugin.PluginStatus{}
+	}
+	return s.plugins.Status()
+}
+
 func (s *Server) Run(ctx context.Context) error {
 	s.directory.Start(ctx)
 

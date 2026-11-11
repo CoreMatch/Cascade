@@ -12,12 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"cascade/internal/backend"
+	"cascade/internal/plugin"
 )
 
 type fakeProxyService struct {
 	ready      bool
 	rooms      []backend.Room
 	statuses   []backend.Status
+	plugins    []plugin.PluginStatus
 	createCode string
 	createBody any
 	method     string
@@ -29,9 +31,10 @@ type fakeProxyService struct {
 	roomErr    error
 }
 
-func (f *fakeProxyService) Ready() bool                       { return f.ready }
-func (f *fakeProxyService) Rooms() []backend.Room             { return f.rooms }
-func (f *fakeProxyService) BackendStatuses() []backend.Status { return f.statuses }
+func (f *fakeProxyService) Ready() bool                           { return f.ready }
+func (f *fakeProxyService) Rooms() []backend.Room                 { return f.rooms }
+func (f *fakeProxyService) BackendStatuses() []backend.Status     { return f.statuses }
+func (f *fakeProxyService) PluginStatuses() []plugin.PluginStatus { return f.plugins }
 
 func (f *fakeProxyService) CreateRoom(_ context.Context, code string, body any) ([]byte, int, error) {
 	f.createCode, f.createBody = code, body
@@ -150,6 +153,70 @@ func TestProxyRouterBackends(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"backends"`) {
 		t.Fatalf("missing backends key: %s", response.Body.String())
+	}
+}
+
+// TestProxyRouterPlugins covers GET /api/plugins (contract cascade-proxy.yaml
+// /api/plugins): status snapshot with the contract-locked camelCase keys.
+func TestProxyRouterPlugins(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeProxyService{plugins: []plugin.PluginStatus{{
+		Name:            "route-watcher",
+		BaseURL:         "http://127.0.0.1:9801",
+		Enabled:         true,
+		Ready:           true,
+		ManifestID:      "route-watcher",
+		ManifestVersion: "0.1.0",
+		Events:          []string{"player.registered", "player.route", "player.routed"},
+		Queued:          0,
+		Delivered:       3,
+		Dropped:         1,
+		Denied:          1,
+		FailOpen:        2,
+	}}}
+	router := ProxyRouter(service, nil, nil)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/plugins", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	var body struct {
+		Plugins []map[string]any `json:"plugins"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response not JSON: %v\n%s", err, response.Body.String())
+	}
+	if len(body.Plugins) != 1 {
+		t.Fatalf("plugins = %d entries, want 1", len(body.Plugins))
+	}
+	// 契约锁定的键集合必须逐键在场（字段级防线）
+	for _, key := range []string{
+		"name", "baseUrl", "enabled", "ready", "manifestId", "manifestVersion",
+		"events", "queued", "delivered", "dropped", "denied", "failOpen",
+	} {
+		if _, ok := body.Plugins[0][key]; !ok {
+			t.Errorf("contract key %q missing: %v", key, body.Plugins[0])
+		}
+	}
+	if body.Plugins[0]["name"] != "route-watcher" || body.Plugins[0]["baseUrl"] != "http://127.0.0.1:9801" {
+		t.Errorf("identity fields wrong: %v", body.Plugins[0])
+	}
+}
+
+// TestProxyRouterPluginsEmpty covers the no-plugin shape: {"plugins": []},
+// never null (contract: empty array when no plugin is configured).
+func TestProxyRouterPluginsEmpty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := ProxyRouter(&fakeProxyService{}, nil, nil)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/plugins", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	if got := strings.TrimSpace(response.Body.String()); !strings.Contains(got, `"plugins":[]`) {
+		t.Fatalf("empty plugin list must serialize as []: %s", got)
 	}
 }
 

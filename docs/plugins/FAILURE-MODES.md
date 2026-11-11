@@ -31,5 +31,6 @@
 ## 计数器
 
 每插件维护 `delivered / dropped / denied / fail_open / queued`，
-启动日志打印 ready 行，关闭时打印 shutdown summary；状态快照由
-`Hub.Status()` 提供（HTTP 状态端点待契约登记后开放，见 knowledge/0008）。
+启动日志打印 ready 行，关闭时打印 shutdown summary；
+`GET /api/plugins` 返回全部插件的实时状态快照
+（`internal/plugin/hub.go::PluginStatus`，字段名由契约锁定）。

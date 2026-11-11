@@ -13,9 +13,11 @@
    插件宕机的事件（对局结算发生在后端侧，由 Avalon 的 game.over 承载）。
    观察档失败即弃是**语义**不是缺陷；未来出现必须不丢的事件时按
    Avalon `outbox.go` 同形增加，不改造现有两档。
-4. **不做 HTTP 状态端点**：插件状态暂只走日志（`[plugin]` 前缀 +
-   关闭时计数汇总）。Cascade 的 HTTP 面受 HA-Contract `cascade-proxy.yaml`
-   门禁，`/api/plugins` 需先在契约库登记——登记前不私下加端点。
+4. **~~不做 HTTP 状态端点~~（已撤销该决定）**：契约库已把
+   `GET /api/plugins` 登记为接口面的一部分（`cascade-proxy.yaml`），
+   长期挂"计划端点"豁免等于没有防线；该端点已实现——返回
+   `{"plugins": [PluginStatus...]}`，字段名与契约锁定的 camelCase 一致，
+   字段级对齐测试见 `internal/plugin/hub_test.go::TestPluginStatusJSONContract`。
 5. **不做插件分发/市场**：插件由运营自行部署（二进制/容器皆可）。
    竞品调查的教训：分发绑死单点域名会生态清零；将来若做，必须内容
    寻址（如 GitHub Releases），且与宿主版本以 manifest 协商闸门解耦。
