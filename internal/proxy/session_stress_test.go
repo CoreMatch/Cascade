@@ -119,7 +119,7 @@ func TestConcurrentSessionBindingStress(t *testing.T) {
 		RoomSnapshotIntervalSec:  60,
 		PendingSessionTimeoutSec: 5,
 	}
-	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil)
+	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

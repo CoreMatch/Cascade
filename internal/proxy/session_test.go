@@ -141,20 +141,20 @@ func (f *fakeStore) GetBindingByGameUUID(string) (*database.PlayerBinding, error
 func (f *fakeStore) GetBindingsByHAUUID(string) ([]database.PlayerBinding, error) {
 	return nil, nil
 }
-func (f *fakeStore) CreateProxyBinding(string, string) error  { return nil }
-func (f *fakeStore) ClaimBinding(string, string) error        { return nil }
-func (f *fakeStore) GetLang(string) (string, error)           { return "en", nil }
-func (f *fakeStore) SetLang(string, string) error             { return nil }
+func (f *fakeStore) CreateProxyBinding(string, string) error   { return nil }
+func (f *fakeStore) ClaimBinding(string, string) error         { return nil }
+func (f *fakeStore) GetLang(string) (string, error)            { return "en", nil }
+func (f *fakeStore) SetLang(string, string) error              { return nil }
 func (f *fakeStore) CleanupStaleProxyBindings() (int64, error) { return 0, nil }
-func (f *fakeStore) Close() error                             { return nil }
+func (f *fakeStore) Close() error                              { return nil }
 
 func TestRestoreAuthOnlyTrustsCachedStateWithABinding(t *testing.T) {
 	for _, test := range []struct {
-		name        string
-		cache       *fakeAuthCache
-		store       *fakeStore
-		wantAuth    bool
-		wantHAUUID  string
+		name       string
+		cache      *fakeAuthCache
+		store      *fakeStore
+		wantAuth   bool
+		wantHAUUID string
 	}{
 		{
 			name:       "cached auth with an existing binding restores the session",
