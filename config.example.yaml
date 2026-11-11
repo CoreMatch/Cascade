@@ -111,3 +111,24 @@ mca:
   targets:                                # join_target(host:port) -> 后端 ID 映射
     # - target: "10.0.0.5:5124"           # MCA 成局携带的子服地址（host 大小写不敏感）
     #   backend: "backend-b"              # 必须是上方 backends 中已登记的 id
+
+# --- 进程外插件（可选） ---
+# 插件清单不在 config.yaml 里：它是工作目录下的独立文件 Plugins.json
+#（缺失/为空 = 零插件零回归；非法 = 启动显式失败）。
+# 机制、事件目录与失败语义见 docs/plugins/；参考插件见 docs/plugins/template/。
+# Plugins.json 示例：
+#   {
+#     "version": 1,
+#     "admissionTimeoutMs": 2500,
+#     "deliveryTimeoutMs": 10000,
+#     "outboxCapacity": 128,
+#     "entries": [
+#       {
+#         "name": "route-watcher",
+#         "baseUrl": "http://127.0.0.1:9801",
+#         "secrets": ["<32+位 hex 共享密钥>"],
+#         "enabled": true,
+#         "vetoEvents": ["player.route"]
+#       }
+#     ]
+#   }

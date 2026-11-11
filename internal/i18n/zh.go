@@ -51,4 +51,5 @@ var zhMessages = map[string]string{
 	"msg.route_unknown_target": "匹配成功，但代理未配置对应的游戏服务器，请联系管理员。",
 	"msg.route_target_unready": "无法进入对局：目标服务器未就绪，请稍后重试。",
 	"msg.route_no_jump":        "无法进入对局：目标服务器未配置跳转入口，请联系管理员。",
+	"msg.route_denied":         "无法进入对局：%s",
 }

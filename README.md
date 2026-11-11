@@ -61,6 +61,14 @@ go run ./cmd/cascade
 
 设计理由与端口方案的取舍见 `knowledge/0007-lobby-jump-port-routing.md`。
 
+## 进程外插件（Plugins.json）
+
+Cascade 的扩展面是**进程外插件**（`cascade-plugin/v1`，与 Avalon 插件体系同构）：插件是独立 HTTP 服务，Cascade 是调用方，按订阅投递事件。工作目录的 `Plugins.json` 是插件清单——缺失/为空 = 零插件、行为与未启用逐字节一致；非法 = 启动显式失败。
+
+- 事件目录：`player.registered`（观察）、`player.route`（双模，授权后可否决 MCA 分配转向）、`player.routed`（观察）。
+- 否决失败兜底一律 fail-open：插件崩溃/超时/畸形应答不会卡住玩家链路。
+- 契约机制（签名、协商、载荷、失败语义）见 [`docs/plugins/`](docs/plugins/README.md)，参考插件见 [`docs/plugins/template/`](docs/plugins/template/README.md)，设计记录见 `knowledge/0008-out-of-process-plugins.md`。
+
 ## 验证范围
 
 仓内测试覆盖配置迁移、OpenAPI YAML 解析、路由目录、按信任档推导的明文与 mTLS 控制/游戏传输、JWT 身份绑定和 RW 帧转发。它们不等同于真实客户端兼容验收。正式切换前仍需使用独立后端和真实 Rusted Warfare 客户端完成握手、入房及一局游戏，并在维护窗口切换。

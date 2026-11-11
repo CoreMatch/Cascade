@@ -14,6 +14,7 @@ import (
 
 	"cascade/internal/backend"
 	"cascade/internal/i18n"
+	"cascade/internal/plugin"
 	"cascade/internal/protocol"
 )
 
@@ -98,6 +99,7 @@ func (s *session) clientToBackend(ctx context.Context) error {
 				return err
 			}
 			s.bound.Store(true)
+			s.emitPlayerRegistered()
 			s.maybeRouteToMatch(ctx)
 		} else if !s.bound.Load() {
 			return errors.New("client sent game data before identity binding")
@@ -440,6 +442,26 @@ func (s *session) kick(reason string) {
 	defer s.writeMu.Unlock()
 	_ = s.client.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
 	_ = protocol.WritePacket(s.client, protocol.EncodeKick(reason))
+}
+
+// emitPlayerRegistered notifies subscribed plugins that identity binding
+// completed (observe tier: best-effort, never blocks the session).
+func (s *session) emitPlayerRegistered() {
+	if s.server.plugins == nil {
+		return
+	}
+	s.server.plugins.EmitPlayerRegistered(s.pluginPlayerInfo(), s.backendClient.ID)
+}
+
+// pluginPlayerInfo builds the player block of plugin event envelopes from
+// the session state at call time.
+func (s *session) pluginPlayerInfo() plugin.PlayerInfo {
+	return plugin.PlayerInfo{
+		PlayerID:      s.playerID,
+		Name:          s.playerName,
+		Authenticated: s.authenticated,
+		HAUserUUID:    s.haUserUUID,
+	}
 }
 
 func writeFull(w io.Writer, data []byte) error {
