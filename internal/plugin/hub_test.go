@@ -36,6 +36,10 @@ type fakePlugin struct {
 	verdicts  map[string]fakeVerdict
 	subscribe map[string]EventCapability
 	manifest  fakeVerdict // 覆盖 manifest 应答（Status/NoSign/Hang）
+
+	// manifest 内容覆盖（协商边界测试用；空值 = 契约默认）
+	mSchema, mProtocol, mID, mVersion string
+	padManifestKB                     int // >0 时在 manifest 里塞合法 JSON 填充
 }
 
 func newFakePlugin(secretHex string) *fakePlugin {
@@ -76,17 +80,36 @@ func (f *fakePlugin) serveManifest(w http.ResponseWriter, r *http.Request) {
 	for k, v := range f.subscribe {
 		subscribe[k] = v
 	}
+	schema, protocol, id, version, pad := f.mSchema, f.mProtocol, f.mID, f.mVersion, f.padManifestKB
 	f.mu.Unlock()
 	if mv.Hang > 0 {
 		time.Sleep(mv.Hang)
 	}
-	body, _ := json.Marshal(Manifest{
-		Schema:   ManifestSchema,
-		Protocol: ProtocolV1,
-		ID:       "fake-plugin",
-		Version:  "0.0.1",
-		Events:   subscribe,
-	})
+	if schema == "" {
+		schema = ManifestSchema
+	}
+	if protocol == "" {
+		protocol = ProtocolV1
+	}
+	if id == "" {
+		id = "fake-plugin"
+	}
+	if version == "" {
+		version = "0.0.1"
+	}
+	type manifestWire struct {
+		Schema   string                     `json:"schema"`
+		Protocol string                     `json:"protocol"`
+		ID       string                     `json:"id"`
+		Version  string                     `json:"version"`
+		Events   map[string]EventCapability `json:"events"`
+		Padding  string                     `json:"padding,omitempty"`
+	}
+	wire := manifestWire{Schema: schema, Protocol: protocol, ID: id, Version: version, Events: subscribe}
+	if pad > 0 {
+		wire.Padding = strings.Repeat("x", pad*1024)
+	}
+	body, _ := json.Marshal(wire)
 	if mv.Status != 0 {
 		http.Error(w, "forced", mv.Status)
 		return
