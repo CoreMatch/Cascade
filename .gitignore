@@ -6,6 +6,7 @@ data/
 /cascade
 /rwgin
 /cmd/cascade/cascade
+/build/
 *.exe
 *.test
 *.out
