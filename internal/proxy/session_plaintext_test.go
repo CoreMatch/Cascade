@@ -147,7 +147,7 @@ func TestProxyBindsRegisteredIdentityOverPlaintextBackend(t *testing.T) {
 		RoomSnapshotIntervalSec:  60,
 		PendingSessionTimeoutSec: 5,
 	}
-	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil)
+	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewServer without mTLS material for an open backend: %v", err)
 	}
@@ -351,12 +351,12 @@ func TestJumpPortRoutesToForcedBackend(t *testing.T) {
 	targetControl, targetGame, targetConn := startJumpBackend(t, "target", "[]")
 
 	cfg := config.Config{
-		GameListenAddr:           "127.0.0.1:0",
-		RegisterTimeoutSec:       3,
-		ReadTimeoutSec:           0,
-		MaxConnections:           0,
-		ChatRateLimit:            0,
-		DefaultBackendID:         "lobby",
+		GameListenAddr:     "127.0.0.1:0",
+		RegisterTimeoutSec: 3,
+		ReadTimeoutSec:     0,
+		MaxConnections:     0,
+		ChatRateLimit:      0,
+		DefaultBackendID:   "lobby",
 		Backends: []config.BackendConfig{
 			{ID: "lobby", ControlURL: lobbyControl, GameAddress: lobbyGame, TrustMode: "open"},
 			{ID: "target", ControlURL: targetControl, GameAddress: targetGame, TrustMode: "open", JumpPort: 5201},
@@ -368,7 +368,7 @@ func TestJumpPortRoutesToForcedBackend(t *testing.T) {
 		RoomSnapshotIntervalSec:  60,
 		PendingSessionTimeoutSec: 5,
 	}
-	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil)
+	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,13 +427,13 @@ func TestCommandGotoSendsReconnectToJumpPort(t *testing.T) {
 	targetControl, targetGame, _ := startJumpBackend(t, "target", roomsJSON)
 
 	cfg := config.Config{
-		GameListenAddr:           "127.0.0.1:0",
-		RegisterTimeoutSec:       3,
-		ReadTimeoutSec:           0,
-		MaxConnections:           0,
-		ChatRateLimit:            0,
-		DefaultBackendID:         "target",
-		PublicGameHost:           "cascade.example",
+		GameListenAddr:     "127.0.0.1:0",
+		RegisterTimeoutSec: 3,
+		ReadTimeoutSec:     0,
+		MaxConnections:     0,
+		ChatRateLimit:      0,
+		DefaultBackendID:   "target",
+		PublicGameHost:     "cascade.example",
 		Backends: []config.BackendConfig{
 			{ID: "target", ControlURL: targetControl, GameAddress: targetGame, TrustMode: "open", JumpPort: 5201},
 		},
@@ -444,7 +444,7 @@ func TestCommandGotoSendsReconnectToJumpPort(t *testing.T) {
 		RoomSnapshotIntervalSec:  60,
 		PendingSessionTimeoutSec: 5,
 	}
-	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil)
+	server, err := NewServer(cfg, log.New(io.Discard, "", 0), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
