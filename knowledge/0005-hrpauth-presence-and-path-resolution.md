@@ -97,12 +97,12 @@ original rationale (2026-11-04), and a contract check settles the question.
 The HRPAuth contract prescribes **no default** for `ttl_seconds`: the field
 is optional, and `<= 0` or omission means "never expires" (HA-Contract
 `/home/lnb/Desktop/HA/HA-Contract/docs/api/openapi/hrpauth-business.yaml (field: ttl_seconds)`;
-`/home/lnb/Desktop/HA/HRPAuth/knowledge/0008-microservice-extension-layer.md:L66 fp=4db30293`).
+`/home/lnb/Desktop/HA/hrpauth/HRPAuth/knowledge/0008-microservice-extension-layer.md:L66 fp=4db30293`).
 **120 s is therefore this repository's own default; it is not a
 contract-mandated default and not an ecosystem convention.** The only
 numerical data point in the contract repository is
 the registration example in
-`/home/lnb/Desktop/HA/HRPAuth/knowledge/0008-microservice-extension-layer.md:L48 fp=f7eb5415`,
+`/home/lnb/Desktop/HA/hrpauth/HRPAuth/knowledge/0008-microservice-extension-layer.md:L48 fp=f7eb5415`,
 which happens to use `"ttl_seconds": 120` — an illustrative example, not a
 prescribed value.
 
@@ -141,11 +141,11 @@ prescribed value.
   No default value for `ttl_seconds` is prescribed anywhere in the spec.
 - HRPAuth repository (repatriated from HA-Contract `docs/dev/HRPAuth/` on
   2026-11-07),
-  `/home/lnb/Desktop/HA/HRPAuth/knowledge/0008-microservice-extension-layer.md:L45-L61 fp=935c5421`
+  `/home/lnb/Desktop/HA/hrpauth/HRPAuth/knowledge/0008-microservice-extension-layer.md:L45-L61 fp=935c5421`
   (registration example using `"ttl_seconds": 120`),
-  `/home/lnb/Desktop/HA/HRPAuth/knowledge/0008-microservice-extension-layer.md:L66 fp=4db30293`
+  `/home/lnb/Desktop/HA/hrpauth/HRPAuth/knowledge/0008-microservice-extension-layer.md:L66 fp=4db30293`
   (`ttl_seconds` semantics: optional; `<= 0` or omitted = never expires),
-  `/home/lnb/Desktop/HA/HRPAuth/knowledge/0008-microservice-extension-layer.md:L90 fp=c0b83f76`
+  `/home/lnb/Desktop/HA/hrpauth/HRPAuth/knowledge/0008-microservice-extension-layer.md:L90 fp=c0b83f76`
   (repeated heartbeats keep `first_seen`, refresh `last_seen`; expired
   records are cleaned lazily on access).
 - Commits: `9dceaf6` "fix(auth): renew HRPAuth presence before its TTL
