@@ -19,7 +19,7 @@ db_path: "data/cascade.db"       # db_type=sqlite 时生效
 # redis_db: 0
 # redis_prefix: "cascade"
 
-# --- HRPAuth（可选，玩家认证/认领） ---
+# --- Armorial（可选，玩家认证/认领） ---
 # hrpauth_url: "https://auth.example.net"
 # hrpauth_client_id: "..."
 # hrpauth_client_secret: "..."
@@ -92,7 +92,7 @@ room_snapshot_interval_sec: 5
 pending_session_timeout_sec: 5
 
 # --- MCA 对局路由（可选；插件本体 CoreMatch/MCA-Cascade） ---
-# 玩家身份绑定后若位于默认后端（大厅），代理按玩家绑定的 HRPAuth 账号
+# 玩家身份绑定后若位于默认后端（大厅），代理按玩家绑定的 Armorial 账号
 # UUID 向 MatchCore Arena 查一次成局分配：有成局且可映射 -> 复用 /goto 的
 # PACKET_RECONNECT_TO + jump_port 机制送往对应后端；其余情况一律留在大厅。
 # 游客（未 /login 或 /claim）没有可查询身份，永远留在大厅。

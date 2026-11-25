@@ -9,7 +9,7 @@
 manifest_version: 1
 kind: service
 project: cascade
-display_name: Cascade
+display_name: Armorial Cascade
 group: edge
 # 未知：仓库无版本 tag；config.go configVersion=2 是配置 schema 版本，
 # 非服务版本。

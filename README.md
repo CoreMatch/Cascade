@@ -10,7 +10,7 @@ Cascade is an edge reverse proxy that speaks the native Rusted Warfare protocol.
 
 - **Unify the front door.** Players connect to Cascade while each backend owns its rooms and matches.
 - **Route with context.** Exact-room, longest-prefix, and default routing use health gates before selecting a backend.
-- **Carry trusted identity.** HRPAuth-bound JWT validation supports identity-aware access, not universal JWT issuer support.
+- **Carry trusted identity.** Armorial-bound JWT validation supports identity-aware access, not universal JWT issuer support.
 - **Keep backends private.** `/rooms` and `/goto` guide players through public reconnects without exposing backend addresses.
 - **Choose transport explicitly.** Plaintext and mTLS modes fit different backend trust boundaries.
 - **Extend in isolation.** Process-isolated, signed plugins add edge behavior without running inside the proxy.
@@ -18,9 +18,9 @@ Cascade is an edge reverse proxy that speaks the native Rusted Warfare protocol.
 ## Learn more
 
 - [Plugin guide](docs/plugins/README.md) — signed, process-isolated extensions
-- [HA Contract](https://github.com/CoreMatch/HA-Contract) — canonical proxy and backend contracts
+- [Armorial Contract](https://github.com/CoreMatch/HA-Contract) — canonical proxy and backend contracts
 - [Avalon](https://github.com/CoreMatch/Avalon) — a compatible Rusted Warfare server runtime
-- [HA Wiki](https://wiki.mcnb.dev/) — ecosystem deployment and development guides
+- [Armorial Wiki](https://wiki.mcnb.dev/) — ecosystem deployment and development guides
 
 ## Limits
 

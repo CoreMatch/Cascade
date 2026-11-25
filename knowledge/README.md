@@ -10,7 +10,7 @@ overrides outward behavior definitions**.
 
 Outward behavior — the backend contract between this proxy and independently
 developed Rusted Warfare backends — is defined authoritatively in the
-HA-Contract repository:
+Armorial Contract repository:
 
 - [`docs/dev/Cascade/Cascade-Backend-v1.md`](https://github.com/CoreMatch/HA-Contract/blob/main/docs/dev/Cascade/Cascade-Backend-v1.md)
 - [`docs/api/openapi/cascade-backend-v1.yaml`](https://github.com/CoreMatch/HA-Contract/blob/main/docs/api/openapi/cascade-backend-v1.yaml)
@@ -30,7 +30,7 @@ Each entry is one page in ADR style:
 - **Decision** — what was chosen
 - **Consequences** — including costs and limitations
 - **Evidence** — `file:line` references and commit hashes. Every piece of
-  evidence was actually checked against this repository (or the HA-Contract
+  evidence was actually checked against this repository (or the Armorial Contract
   repository, noted as such); anything that could not be verified is marked
   "not verified". Design intent that cannot be determined from the code or
   history is listed as "pending author confirmation"; once the author

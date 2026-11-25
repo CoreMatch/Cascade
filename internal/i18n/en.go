@@ -8,7 +8,7 @@ var enMessages = map[string]string{
 	// --- Chat rate limiting ---
 	"msg.rate_limit": "You are sending messages too fast, please try again later.",
 
-	// --- HA Authentication ---
+	// --- Armorial Authentication ---
 	"msg.ha_not_configured":     "Authentication service is not configured.",
 	"msg.already_authenticated": "You are already authenticated.",
 	"msg.auth_failed_service":   "Authentication failed: service unavailable.",
@@ -16,20 +16,20 @@ var enMessages = map[string]string{
 	"msg.auth_success":          "Authentication successful! Welcome, %s",
 	"msg.login_usage":           "Usage: /login <email/username> <password>",
 
-	// --- HA account claim ---
+	// --- Armorial account claim ---
 	"msg.claim_usage":         "Usage: /claim <new password> <email>",
 	"msg.claim_already":       "Your account has already been claimed.",
 	"msg.claim_not_found":     "Your account record was not found.",
 	"msg.claim_pwd_too_short": "Password must be at least 6 characters.",
 	"msg.claim_failed":        "Claim failed: %s",
 	"msg.claim_bind_failed":   "Binding failed: %s",
-	"msg.claim_success":       "Claim successful! Your game account is now linked to an HA account.",
+	"msg.claim_success":       "Claim successful! Your game account is now linked to an Armorial account.",
 	"msg.claim_email":         "Email: %s",
 	"msg.claim_remember":      "Please remember your login credentials!",
 
 	// --- Auth status ---
 	"msg.whoami_authenticated": "Status: Authenticated",
-	"msg.whoami_uuid":          "HA UUID: %s",
+	"msg.whoami_uuid":          "Armorial UUID: %s",
 	"msg.whoami_guest":         "Status: Unauthenticated (Guest)",
 	"msg.whoami_hint":          "Use /login <email> <password> to log in",
 

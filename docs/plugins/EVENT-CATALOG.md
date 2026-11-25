@@ -37,8 +37,8 @@
 |---|---|
 | `playerId` | 游戏侧玩家 ID |
 | `name` | 玩家名 |
-| `authenticated` | 是否已绑定 HRPAuth 账号 |
-| `haUserUuid` | 已绑定时的 HRPAuth 账号 UUID（游客省略） |
+| `authenticated` | 是否已绑定 Armorial 账号 |
+| `haUserUuid` | 已绑定时的 Armorial 账号 UUID（游客省略） |
 
 ## player.registered
 

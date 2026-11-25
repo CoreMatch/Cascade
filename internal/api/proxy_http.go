@@ -268,7 +268,7 @@ func registerInternalRoutes(engine *gin.Engine, authClient *auth.Client, db data
 	internal := engine.Group("/internal")
 	internal.Use(func(c *gin.Context) {
 		if authClient == nil || !authClient.ValidateInternalKey(c.GetHeader("X-Internal-Key")) {
-			writeError(c, http.StatusUnauthorized, codeCascadeInvalidInternalKey, "X-Internal-Key is missing or does not match the key issued by HRPAuth Core")
+			writeError(c, http.StatusUnauthorized, codeCascadeInvalidInternalKey, "X-Internal-Key is missing or does not match the key issued by Armorial Core")
 			c.Abort()
 			return
 		}
